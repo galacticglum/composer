@@ -8,7 +8,7 @@ These instructions will get you a copy of the project up and running on your loc
 * A functioning conda installation (We recommend [Miniconda](https://docs.conda.io/en/latest/miniconda.html), a minimal installer for conda).
 
 ### Automated Install
-We provide an automated instalation script for Composer located in the ``scripts`` directory. If you are running on Mac OS X or Linux, this script is caled ``install_composer.sh``. If you are on Windows, it is called ``install_composer.bat``. 
+We provide an automated installation script for Composer located in the ``scripts`` directory. If you are running on Mac OS X or Linux, this script is caled ``install_composer.sh``. If you are on Windows, it is called ``install_composer.bat``. 
 
 From the root project directory (this is important!), open a new terminal window and run the respective script for your platform:
 

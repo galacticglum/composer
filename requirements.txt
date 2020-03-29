@@ -1,0 +1,3 @@
+certifi==2019.11.28
+click==7.1.1
+wincertstore==0.2

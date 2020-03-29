@@ -1,5 +1,5 @@
 # Composer
-Composer is a deep learning enabled music generator module built in [Python](https://www.python.org/) and using [TensorFlow](https://www.tensorflow.org/). The goal of this project is to investigate how music can be generated and enhanced using machine learning techniques (such as deep learning via neural networks). It is a sandbox for generative MIDI neural-network models. What is NOT is a fully-featured music generator.
+Composer is a deep learning enabled music generator module built in [Python](https://www.python.org/) and using [TensorFlow](https://www.tensorflow.org/). The goal of this project is to investigate how music can be generated and enhanced using machine learning techniques (such as deep learning via neural networks). It is a sandbox for generative MIDI neural-network models. What it is NOT is a fully-featured music generator.
 
 ## Installation
 These instructions will get you a copy of the project up and running on your local machine for development and testing purposes. Composer uses [https://docs.conda.io/en/latest/](https://docs.conda.io/en/latest/), an open-source package management system, for virtual environment management. 

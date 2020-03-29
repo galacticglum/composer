@@ -10,7 +10,12 @@ These instructions will get you a copy of the project up and running on your loc
 ### Automated Install
 We provide an automated instalation script for Composer located in the ``scripts`` directory. If you are running on Mac OS X or Linux, this script is caled ``install_composer.sh``. If you are on Windows, it is called ``install_composer.bat``. 
 
-From the root project directory (this is important!), run the respective script for your platform. After the script is complete, open a terminal window and activate the ``composer`` environment by running ``conda activate composer``. You will have to activate this environment every time you open a new terminal window that will be used to run Composer.
+From the root project directory (this is important!), open a new terminal window and run the respective script for your platform:
+
+* **Windows**: ``scripts/install_composer.bat``.
+* **Mac OS X or Linux**: ``source scripts/install_composer.sh``.
+
+After the script is complete, open a terminal window and activate the ``composer`` environment by running ``conda activate composer``. You will have to activate this environment every time you open a new terminal window that will be used to run Composer.
 
 ### Manual Install
 To manually install Composer, open a terminal window and navigate to the root project directory.

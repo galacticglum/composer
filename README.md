@@ -12,3 +12,17 @@ Navigate to the root directory of the project and run the ``bash scripts/install
 * A functioning conda installation (We recommend [Miniconda](https://docs.conda.io/en/latest/miniconda.html), a minimal installer for conda).
 
 Navigate to the root directory of the project and run ``scripts/install_composer.bat`` . This will automatically create and setup the conda environment. After the script is complete, open a conda prompt (i.e. a command prompt window with conda available) and activate the ``composer`` environment by running ``conda activate composer``. You will have to activate this environment every time you open a new command propt window that will be used to run Composer.
+
+## Manual
+To manually install Composer, open a terminal window and navigate to the root project directory.
+
+First clone create a conda environment from the ``environment.yml`` file:
+```
+conda env create -f environment.yml -q
+```
+Next, execute the setup command:
+```
+pip install -e .
+``` 
+
+You can now run the Composer CLI in the conda environment as you would any other command. Also, any changes made to the CLI will be automatically be reflected (due to the ``-e`` argument when running the setup command).

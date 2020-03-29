@@ -25,4 +25,4 @@ Next, execute the setup command:
 pip install -e .
 ``` 
 
-You can now run the Composer CLI in the conda environment as you would any other command. Also, any changes made to the CLI will be automatically be reflected (due to the ``-e`` argument when running the setup command).
+You can now run the Composer CLI in the conda environment as you would any other command. Also, any changes made to the CLI will be automatically reflected (due to the ``-e`` argument when running the setup command).

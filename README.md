@@ -7,11 +7,10 @@ These instructions will get you a copy of the project up and running on your loc
 **Prerequisites:**
 * A functioning conda installation (We recommend [Miniconda](https://docs.conda.io/en/latest/miniconda.html), a minimal installer for conda).
 
-### Mac OS X or Linux
-Navigate to the root directory of the project and run the ``bash scripts/install_composer.sh``. This will automatically create and setup the conda environment. After the script is complete, open a new terminal window and activate the ``composer`` environment by running ``source activate composer``.
+### Automated Install
+We provide an automated instalation script for Composer located in the ``scripts`` directory. If you are running on Mac OS X or Linux, this script is caled ``install_composer.sh``. If you are on Windows, it is called ``install_composer.bat``. 
 
-### Windows
-Navigate to the root directory of the project and run ``scripts/install_composer.bat`` . This will automatically create and setup the conda environment. After the script is complete, open a conda prompt (i.e. a command prompt window with conda available) and activate the ``composer`` environment by running ``conda activate composer``. You will have to activate this environment every time you open a new command propt window that will be used to run Composer.
+From the root project directory (this is important!), run the respective script for your platform. After the script is complete, open a terminal window and activate the ``composer`` environment by running ``conda activate composer``. You will have to activate this environment every time you open a new terminal window that will be used to run Composer.
 
 ### Manual Install
 To manually install Composer, open a terminal window and navigate to the root project directory.

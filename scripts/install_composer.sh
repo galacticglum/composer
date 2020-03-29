@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 #
-# An install script for composer-ai (https://github.com/galacticglum/composer-ai).
+# An install script for composer (https://github.com/galacticglum/composer).
 # Run with: bash install_composer.sh
 
 # Exit on error
@@ -13,7 +13,7 @@ finish() {
     echo "=================================================="
     echo "Installation did not finish successfully."
     echo "For assistance, post an issue on the project page."
-    echo "https://github.com/galacticglum/composer-ai"
+    echo "https://github.com/galacticglum/composer"
     echo "=================================================="
     echo ""
   fi
@@ -64,27 +64,27 @@ else
     echo ""
 fi
 
-# Set up the composer-ai environment
+# Set up the composer environment
 echo ""
 echo "================================="
-echo "setting up composer-ai environment"
+echo "setting up composer environment"
 echo "================================="
 echo ""
 
-conda create -n "composer-ai" python=3.7
+conda create -n "composer" python=3.7
 
 set +e
-conda activate "composer-ai"
+conda activate "composer"
 set -e
-if [[ $(conda info --envs | grep "*" | awk '{print $1}') != "composer-ai" ]]; then
-  print_error 'Did not successfully activate the composer-ai conda environment'
+if [[ $(conda info --envs | grep "*" | awk '{print $1}') != "composer" ]]; then
+  print_error 'Did not successfully activate the composer conda environment'
 fi
 
 pip install --editable ../
 
 echo ""
 echo "=============================="
-echo "Composer-AI Install Success!"
+echo "Composer Install Success!"
 echo ""
 echo "NOTE:"
 echo "For changes to become active, you will need to open a new terminal."
@@ -93,10 +93,10 @@ echo "For complete uninstall, remove the installed anaconda directory:"
 echo "rm -r ~/miniconda2"
 echo ""
 echo "To just uninstall the environment run:"
-echo "conda remove -n composer-ai --all"
+echo "conda remove -n composer --all"
 echo ""
-echo "To run composer-ai, activate your environment:"
-echo "source activate composer-ai"
+echo "To run composer, activate your environment:"
+echo "source activate composer"
 echo ""
 echo "You can deactivate when you're done:"
 echo "source deactivate"

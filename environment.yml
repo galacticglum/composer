@@ -1,4 +1,4 @@
-name: composer-ai
+name: composer
 channels:
   - defaults
 dependencies:

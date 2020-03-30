@@ -33,6 +33,10 @@ class Note:
         self.pitch = pitch
         self.velocity = velocity
 
+    def __repr__(self):
+        return 'Note(start={:f}, end={:f}, pitch={}, velocity={})'.format(
+            self.start, self.end, self.pitch, self.velocity)
+
     @property
     def duration(self):
         '''
@@ -57,6 +61,7 @@ class NoteSequence:
         '''
 
         self.notes = []
+        self.add(notes)
 
     def add(self, notes, maintain_order=True):
         '''
@@ -93,14 +98,15 @@ class NoteSequence:
         if not filepath.is_file():
             raise InvalidParameterError('Cannot create NoteSequence from \'{}\' since it is not a file.'.format(filepath))
     
-        midi = PrettyMIDI(filepath)
-        notes = []
-        for instrument in midi.instruments:
-            if ignore_drums and instrument.is_drum: continue
-            if programs is not None and not instrument.program in programs: continue
+        with open(filepath, 'rb') as file:
+            midi = PrettyMIDI(file)
+            notes = []
+            for instrument in midi.instruments:
+                if ignore_drums and instrument.is_drum: continue
+                if programs is not None and not instrument.program in programs: continue
 
-            for midi_note in instrument.notes:
-                # PrettyMIDI timing is in seconds so we have to convert them to milliseconds.
-                notes.append(Note(midi_note.start * 1000, midi_note.end * 1000, midi_note.pitch, midi_note.velocity))
-            
-        return NoteSequence(notes)
+                for midi_note in instrument.notes:
+                    # PrettyMIDI timing is in seconds so we have to convert them to milliseconds.
+                    notes.append(Note(midi_note.start * 1000, midi_note.end * 1000, midi_note.pitch, midi_note.velocity))
+                
+            return NoteSequence(notes)

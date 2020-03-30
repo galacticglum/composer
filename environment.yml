@@ -8,3 +8,4 @@ dependencies:
     - click==7.1.1
     - colorama==0.4.3
     - requests==2.23.0
+    - pretty-midi==0.2.8

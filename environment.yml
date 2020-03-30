@@ -6,3 +6,4 @@ dependencies:
   - pip
   - pip:
     - click==7.1.1
+    - colorama==0.4.3

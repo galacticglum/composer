@@ -54,8 +54,8 @@ def preprocess(dataset_path, output_path, num_workers):
 
     event_sequence = sequence.to_event_sequence()
     int_encoding = event_sequence.to_integer_encoding()
-    print(int_encoding.events)
-    print(int_encoding.decode())
+    int_encoding.to_file('data/test.data')
+    print(int_encoding.from_file('data/test.data').decode())
     # one_hot_encoding = event_sequence.to_one_hot_encoding()
     # print(one_hot_encoding.vectors)
     # print(one_hot_encoding.decode())

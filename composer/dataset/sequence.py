@@ -5,6 +5,8 @@ along with their associated event encodings.
 '''
 
 import abc
+import struct
+import itertools
 import collections
 from enum import Enum, IntEnum
 from pathlib import Path
@@ -756,6 +758,9 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
 
     '''
 
+    _HEADER_FORMAT = 'iii'
+    _EVENT_FORMAT = 'ii'
+
     def __init__(self, time_step_increment, max_time_steps, velocity_bins, events=None):
         '''
         Initializes an instance of :class:`IntegerEncodedEventSequence`.
@@ -816,12 +821,26 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
         '''
         Writes this :class:`IntegerEncodedEventSequence` to the specified filepath.
 
+        :note:
+            This will overwrite the file if it already exists.
+
         :param filepath:
             The destination of the encoded sequence.
         
         '''
 
-        raise NotImplementedError()
+        with open(filepath, 'wb+') as file:
+            # Each event is encoded as a integer tuple.
+            events_format = IntegerEncodedEventSequence._EVENT_FORMAT * len(self.events)
+
+            # The first three integers are dedicated for describing the event sequence:
+            #   Values: time step increments, max time steps, and velocity bins.
+            encoded_sequence = struct.pack(IntegerEncodedEventSequence._HEADER_FORMAT + events_format, 
+                self.time_step_increment, self.max_time_steps, self.velocity_bins,
+                *list(itertools.chain(*self.events))
+            )
+            
+            file.write(encoded_sequence)
 
     @staticmethod
     def from_file(filepath):
@@ -835,4 +854,16 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
 
         '''
 
-        raise NotImplementedError()
+        with open(filepath, 'rb') as file:
+            header_size = struct.calcsize(IntegerEncodedEventSequence._HEADER_FORMAT)
+            time_step_increment, max_time_steps, velocity_bins = struct.unpack(IntegerEncodedEventSequence._HEADER_FORMAT, file.read(header_size))
+            
+            event_size = struct.calcsize(IntegerEncodedEventSequence._EVENT_FORMAT)
+            buffer_length = Path(filepath).stat().st_size - header_size
+
+            events = []
+            for i in range(buffer_length // event_size):
+                event_type, value = struct.unpack(IntegerEncodedEventSequence._EVENT_FORMAT, file.read(event_size))
+                events.append((event_type, value))
+
+            return IntegerEncodedEventSequence(time_step_increment, max_time_steps, velocity_bins, events)

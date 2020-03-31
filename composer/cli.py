@@ -6,7 +6,7 @@ The command-line interface for Composer.
 import click
 import logging
 import composer.logging_utils as logging_utils
-from composer.dataset.sequence import Note, NoteSequence, SustainPeriod
+from composer.dataset.sequence import Note, NoteSequence, SustainPeriod, OneHotEncodedEventSequence, IntegerEncodedEventSequence
 # import composer.dataset.preprocess
 
 def _set_verbosity_level(logger, value):
@@ -54,9 +54,10 @@ def preprocess(dataset_path, output_path, num_workers):
 
     event_sequence = sequence.to_event_sequence()
     int_encoding = event_sequence.to_integer_encoding()
-    int_encoding.to_file('data/Abdelmola01.data')
-    # print(int_encoding.from_file('data/Abdelmola01.data').decode())
-    # one_hot_encoding = event_sequence.to_one_hot_encoding()
-    # print(one_hot_encoding.vectors)
-    # print(one_hot_encoding.decode())
+    int_encoding.to_file('data/Abdelmola01_int.data')
+    print(IntegerEncodedEventSequence.from_file('data/Abdelmola01_int.data').decode())
+
+    one_hot_encoding = event_sequence.to_one_hot_encoding()
+    one_hot_encoding.to_file('data/Abdelmola01_one_hot.data')
+    print(OneHotEncodedEventSequence.from_file('data/Abdelmola01_one_hot.data').decode())
     # composer.dataset.preprocess.convert_all(dataset_path, output_path, num_workers)

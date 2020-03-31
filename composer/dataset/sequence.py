@@ -282,7 +282,6 @@ class NoteSequence:
         for marker in markers:
             # The interval of time between current time and the event, in time steps.
             interval = int(round(marker.time - current_time) / time_step_increment)
-
             if max_time_steps is not None:
                 # If the interval of time exceeds the max time steps, we need to break it up into
                 # multiple time shift events...

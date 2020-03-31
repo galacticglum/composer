@@ -261,6 +261,7 @@ class NoteSequence:
                     MarkerInfo('SUSTAIN', False, sustain_period.end, sustain_period)
                 ])
         elif sustain_period_encode_mode == NoteSequence.SustainPeriodEncodeMode.EXTEND:
+            # TODO: Implement sustain period extend encoding
             pass
         
         # Make sure that the notes are in sorted order.
@@ -282,13 +283,15 @@ class NoteSequence:
             # The interval of time between current time and the event, in time steps.
             interval = int(round(marker.time - current_time) / time_step_increment)
 
-            # If the interval of time exceeds the max time steps, we need to break it up into
-            # multiple time shift events...
-            for i in range(interval // max_time_steps):
-                events.append(Event(EventType.TIME_SHIFT, max_time_steps))
+            if max_time_steps is not None:
+                # If the interval of time exceeds the max time steps, we need to break it up into
+                # multiple time shift events...
+                for i in range(interval // max_time_steps):
+                    events.append(Event(EventType.TIME_SHIFT, max_time_steps))
 
-            # Get the remaining time and if it isn't zero, add the time shift command.
-            interval %= max_time_steps
+                # Get the remaining time and if it isn't zero, add the time shift command.
+                interval %= max_time_steps
+
             if interval > 0:
                 events.append(Event(EventType.TIME_SHIFT, interval))
 

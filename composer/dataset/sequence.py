@@ -559,6 +559,53 @@ class EventSequence:
         
         return ranges
 
+    def to_note_sequence(self):
+        '''
+        Converts this :class:`EventSequence` to a :class:`NoteSequence`.
+
+        '''
+
+        # The current time, in milliseconds.
+        current_time = 0
+        current_velocity = 0
+        
+        # The current notes mapped by pitch.
+        current_notes = {}
+        current_sustain_period = None
+
+        notes = []
+        sustain_periods = []
+        for event in self.events:
+            if event.type == EventType.NOTE_ON:
+                # We use zero as a placeholder value here since we don't know the end time yet.
+                current_notes[event.value] = Note(current_time, 0, event.value, current_velocity)
+            elif event.type == EventType.NOTE_OFF:
+                note = current_notes[event.value]
+                note.end = current_time
+                notes.append(note)
+
+                # Clear the entry for this note in the current notes dictionary since the note is no longer active.
+                current_notes[event.value] = None
+            elif event.type == EventType.TIME_SHIFT:
+                # Time shift value is in time steps so we need to convert to milliseconds.
+                # Time step increment is the number of milliseconds forward in one time step.
+                current_time += event.value * self.time_step_increment
+            elif event.type == EventType.VELOCITY:
+                # Convert the velocity bin index back to a MIDI velocity.
+                # Of course, since we are quantizing these values, we will lose some precision.
+                current_velocity = (128 * event.value) // self.velocity_bins 
+            elif event.type == EventType.SUSTAIN_ON:
+                # We use zero as a placeholder value here since we don't know the end time yet.
+                current_sustain_period = SustainPeriod(current_time, 0)
+            elif event.type == EventType.SUSTAIN_OFF:
+                current_sustain_period.end = current_time
+                sustain_periods.append(current_sustain_period)
+
+                # Clear the current sustain period since it is no longer active.
+                current_sustain_period = None
+
+        return NoteSequence(notes, sustain_periods)
+
     def __repr__(self):
         return '\n'.join(str(event) for event in self.events)
 

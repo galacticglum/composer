@@ -52,5 +52,5 @@ def preprocess(dataset_path, output_path, num_workers):
         Note(5000, 11000, 3, 37)
     ], [SustainPeriod(5000, 12000)])
 
-    print(sequence.to_event_sequence())
+    print(sequence.to_event_sequence().event_ranges())
     # composer.dataset.preprocess.convert_all(dataset_path, output_path, num_workers)

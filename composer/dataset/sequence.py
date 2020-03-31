@@ -433,6 +433,8 @@ class EventSequence:
         dimensions[EventType.SUSTAIN_ON] = 0
         dimensions[EventType.SUSTAIN_OFF] = 0
 
+        return dimensions
+
     def event_ranges(self):
         '''
         Gets the range of each event type in the one-hot encoded vector.

@@ -4,6 +4,7 @@ along with their associated event encodings.
 
 '''
 
+import collections
 from enum import Enum
 from pathlib import Path
 from pretty_midi import PrettyMIDI
@@ -313,7 +314,7 @@ class NoteSequence:
 
             current_time = marker.time
 
-        return events
+        return EventSequence(events, time_step_increment, max_time_steps, velocity_bins)
 
     @staticmethod
     def from_midi(filepath, programs=None, ignore_drums=True):
@@ -370,3 +371,93 @@ class NoteSequence:
                             sustains[-1].end = control.time
                 
             return NoteSequence(notes, sustains)
+
+class EventSequence:
+    '''
+    The event-based representation of a :class:`NoteSequence`. 
+    
+    '''
+
+    def __init__(self, events, time_step_increment, max_time_steps, velocity_bins):
+        '''
+        Initialize an instance of :class:`EventSequence`.
+
+        :param events:
+            A list of :class:`Event` objects to add to the sequence.
+        :param time_step_increment:
+            The number of milliseconds that a single step in time represents.
+        :param max_time_steps:
+            The maximum number of time steps that a single event can shift time by.
+            If this is ``None``, there is no limit.
+        :param velocity_bins:
+            The number of bins to quantize the note velocity values into.
+
+        '''
+
+        self.events = events
+        self.time_step_increment = time_step_increment
+        self.max_time_steps = max_time_steps
+        self.velocity_bins = velocity_bins
+
+    def event_dimensions(self):
+        '''
+        Gets the dimension of each :class:`EventType`.
+
+        :note:
+            The dimension refers to the range of values that each type of event
+            accepts as parameters. If the dimension is zero, this means that the
+            event does not accept any values (i.e. :var:`Event.value` is ``None``).
+        :returns:
+            A :class:`collections.OrderedDict` which maps `EventType` to integers
+            representing the dimension of each event type.
+            
+        '''
+
+        dimensions = collections.OrderedDict()
+
+        # NOTE_ON and NOTE_OFF take a MIDI pitch value which ranges from 0 to 127.
+        dimensions[EventType.NOTE_ON] = 128
+        dimensions[EventType.NOTE_OFF] = 128
+        # VELOCITY takes a MIDI velocity which ranges from 0 to 127.
+        dimensions[EventType.VELOCITY] = 128
+        
+        # If no max time step value is given (i.e. it is None), we just get the largest
+        # time shift value in the event sequence.
+        max_time_steps = self.max_time_steps if self.max_time_steps is not None else \
+            max(event.value for event in self.events if event.type == EventType.TIME_SHIFT)
+
+        dimensions[EventType.TIME_SHIFT] = max_time_steps
+
+        # SUSTAIN events simply marker the start/end of a period.
+        # They have no parameters...
+        dimensions[EventType.SUSTAIN_ON] = 0
+        dimensions[EventType.SUSTAIN_OFF] = 0
+
+    def event_ranges(self):
+        '''
+        Gets the range of each event type in the one-hot encoded vector.
+
+        :note:
+            Suppose our event sequence consists of two events: ON and OFF,
+            which both have value ranges from 1 to 4. Therefore, our one-
+            hot encoded vector will have the form: [0, 0, 0, 0 | 0, 0, 0, 0]
+            where the line indicates a new event type (separating event ON and OFF).
+
+            The index range for the ON command is [0, 3] and the index range for the
+            OFF command is [4, 7]. This function computes these ranges.
+        :returns:
+            A :class:`collections.OrderedDict` which maps `EventType` to a :class:`range`
+            object representing the range of the event type.
+
+        '''
+
+        offset = 0
+        ranges = collections.OrderedDict()
+        for event_type, dimension in self.event_dimensions().items():
+            ranges[event_type] = range(offset, offset + dimension)
+            offset += dimension
+        
+        return ranges
+
+    def __repr__(self):
+        return '\n'.join(str(event) for event in self.events)

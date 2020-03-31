@@ -45,17 +45,17 @@ def preprocess(dataset_path, output_path, num_workers):
     DATASET_PATH is the path to the dataset that will be preprocessed.
     '''
 
-    # sequence = NoteSequence.from_midi('data/ecomp/Abdelmola01.mid')
-    sequence = NoteSequence([
-        Note(0, 4000, 1, 64),
-        Note(0, 4000, 4, 64),
-        Note(5000, 11000, 3, 37)
-    ], [SustainPeriod(5000, 12000)])
+    sequence = NoteSequence.from_midi('data/ecomp/Abdelmola01.mid')
+    # sequence = NoteSequence([
+    #     Note(0, 4000, 1, 64),
+    #     Note(0, 4000, 4, 64),
+    #     Note(5000, 11000, 3, 37)
+    # ], [SustainPeriod(5000, 12000)])
 
     event_sequence = sequence.to_event_sequence()
     int_encoding = event_sequence.to_integer_encoding()
-    int_encoding.to_file('data/test.data')
-    print(int_encoding.from_file('data/test.data').decode())
+    int_encoding.to_file('data/Abdelmola01.data')
+    # print(int_encoding.from_file('data/Abdelmola01.data').decode())
     # one_hot_encoding = event_sequence.to_one_hot_encoding()
     # print(one_hot_encoding.vectors)
     # print(one_hot_encoding.decode())

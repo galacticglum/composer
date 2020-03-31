@@ -758,8 +758,8 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
 
     '''
 
-    _HEADER_FORMAT = 'iii'
-    _EVENT_FORMAT = 'ii'
+    _HEADER_FORMAT = 'hhh'
+    _EVENT_FORMAT = 'hh'
 
     def __init__(self, time_step_increment, max_time_steps, velocity_bins, events=None):
         '''
@@ -830,7 +830,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
         '''
 
         with open(filepath, 'wb+') as file:
-            # Each event is encoded as a integer tuple.
+            # Each event is encoded as an integer tuple.
             events_format = IntegerEncodedEventSequence._EVENT_FORMAT * len(self.events)
 
             # The first three integers are dedicated for describing the event sequence:

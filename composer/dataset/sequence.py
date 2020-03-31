@@ -10,7 +10,7 @@ import itertools
 import collections
 from enum import Enum, IntEnum
 from pathlib import Path
-from pretty_midi import PrettyMIDI
+from pretty_midi import PrettyMIDI, Instrument, Note as MIDINote, ControlChange
 from composer.exceptions import InvalidParameterError
 
 class Note:
@@ -361,6 +361,38 @@ class NoteSequence:
 
         return EventSequence(events, time_step_increment, max_time_steps, velocity_bins)
 
+    def to_midi(self, filepath, program=1):
+        '''
+        Creates a MIDI file from this :class:`NoteSequence`.
+
+        :param filepath:
+            The path to the MIDI output file.
+        :param programs:
+            The MIDI program (instrument sound) to use. Defaults to 1 (Acoustic Grand Piano).
+            See https://en.wikipedia.org/wiki/General_MIDI#Parameter_interpretations for a full
+            list of all program numbers and their corresponding instruments.
+    
+        '''
+
+        midi = PrettyMIDI()
+        instrument = Instrument(program=program)
+        for note in self.notes:
+            # PrettyMIDI timing is in seconds so we need to convert our start and times to seconds.
+            midi_note = MIDINote(note.velocity, note.pitch, note.start / 1000, note.end / 1000)
+            instrument.notes.append(midi_note)
+
+        for sustain_period in self.sustain_periods:
+            # Control number 64 indicates Damper Pedal on/off (Sustain).
+            # A value that is:
+            #   * less than or equal to 63 indicates OFF
+            #   * greater than or equal to 64 indicates ON
+
+            instrument.control_changes.append(ControlChange(64, 64, sustain_period.start / 1000))
+            instrument.control_changes.append(ControlChange(64, 63, sustain_period.end / 1000))
+
+        midi.instruments.append(instrument)
+        midi.write(filepath)
+        
     @staticmethod
     def from_midi(filepath, programs=None, ignore_drums=True):
         '''

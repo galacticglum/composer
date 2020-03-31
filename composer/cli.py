@@ -45,16 +45,18 @@ def preprocess(dataset_path, output_path, num_workers):
     DATASET_PATH is the path to the dataset that will be preprocessed.
     '''
 
-    # sequence = NoteSequence.from_midi('data/ecomp/Abdelmola01.mid')
-    sequence = NoteSequence([
-        Note(0, 4000, 1, 64),
-        Note(0, 4000, 4, 64),
-        Note(5000, 11000, 3, 37)
-    ], [SustainPeriod(5000, 12000)])
+    sequence = NoteSequence.from_midi('data/ecomp/Abdelmola01.mid')
+    # sequence = NoteSequence([
+    #     Note(0, 4000, 61, 64),
+    #     Note(0, 4000, 65, 64),
+    #     Note(5000, 11000, 56, 100)
+    # ], [SustainPeriod(5000, 12000)])
 
-    event_sequence = sequence.to_event_sequence()
+    event_sequence = sequence.to_event_sequence(time_step_increment=1, velocity_bins=128)
     int_encoding = event_sequence.to_integer_encoding()
-    int_encoding.to_file('data/test_int.data')
-    print(IntegerEncodedEventSequence.from_file('data/test_int.data').decode().to_note_sequence().notes)
+    int_encoding.to_file('data/Abdelmola01_int_2.data')
+
+    note_sequence_from_file = IntegerEncodedEventSequence.from_file('data/Abdelmola01_int_2.data').decode().to_note_sequence()
+    note_sequence_from_file.to_midi('data/Abdelmola01_rerender_2.mid')
 
     # composer.dataset.preprocess.convert_all(dataset_path, output_path, num_workers)

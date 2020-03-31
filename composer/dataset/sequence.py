@@ -633,6 +633,12 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
 
     '''
 
+    # The type of the event, start, and stop. 
+    _EVENT_RANGE_FORMAT = 'hhh'
+
+    # The type of the event, start, and stop.
+    _EVENT_VALUE_RANGE_FORMAT = 'hhh'
+
     def __init__(self, time_step_increment, event_ranges, event_value_ranges, vectors=None):
         '''
         Initializes an instance of :class:`OneHotEncodedEventSequence`.
@@ -728,7 +734,46 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
         
         '''
 
-        raise NotImplementedError()
+        with open(filepath, 'wb+') as file:
+            header_format = self._get_header_format()
+
+            # Write the header
+            unpacked_event_ranges = list(itertools.chain(*[(int(_type), _range.start, _range.stop) for _type, _range in self.event_ranges.items()]))
+            unpacked_event_value_ranges = list(itertools.chain(*[(int(_type), _range.start if _range is not None else -1, \
+                _range.stop if _range is not None else -1) for _type, _range in self.event_value_ranges.items()]))
+
+            file.write(struct.pack(header_format, 
+                len(self.event_ranges), *unpacked_event_ranges,
+                len(self.event_value_ranges), *unpacked_event_value_ranges,
+                self.time_step_increment
+            ))
+
+            one_hot_size = self.event_ranges[next(reversed(self.event_ranges))].stop
+            one_hot_vector_format = OneHotEncodedEventSequence._get_one_hot_vector_format(one_hot_size)
+            for vector in self.vectors:
+                file.write(struct.pack(one_hot_vector_format, *vector))
+
+    def _get_header_format(self):
+        '''
+        Gets the format of the header.
+
+        '''
+
+        # The first integer indicates how many event ranges/event values ranges to read.
+        event_range_format = 'i' + OneHotEncodedEventSequence._EVENT_RANGE_FORMAT * len(self.event_ranges)
+        event_value_range_format = 'i' + OneHotEncodedEventSequence._EVENT_VALUE_RANGE_FORMAT * len(self.event_value_ranges)
+        
+        # The final integer is for the time step increment.
+        return event_range_format + event_value_range_format + 'h'
+
+    @staticmethod
+    def _get_one_hot_vector_format(one_hot_vector_size):
+        '''
+        Gets the format of a one-hot vector.
+
+        '''
+
+        return '?' * one_hot_vector_size
 
     @staticmethod
     def from_file(filepath):
@@ -742,7 +787,56 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
 
         '''
 
-        raise NotImplementedError()
+        with open(filepath, 'rb') as file:
+            integer_size = struct.calcsize('i')
+            header_size = 0
+
+            # Load the event ranges
+            event_ranges_len, = struct.unpack('i', file.read(integer_size))
+            event_ranges = collections.OrderedDict()
+            event_range_size = struct.calcsize(OneHotEncodedEventSequence._EVENT_RANGE_FORMAT)
+            for i in range(event_ranges_len):
+                event_type, start, stop = struct.unpack(OneHotEncodedEventSequence._EVENT_RANGE_FORMAT, file.read(event_range_size))
+                event_ranges[EventType(event_type)] = range(start, stop)
+
+            header_size += integer_size + event_range_size * event_ranges_len     
+
+            # Load the event value ranges
+            event_value_ranges_len, = struct.unpack('i', file.read(integer_size))
+            event_value_ranges = collections.OrderedDict()
+            event_value_range_size = struct.calcsize(OneHotEncodedEventSequence._EVENT_VALUE_RANGE_FORMAT)
+            for i in range(event_value_ranges_len):
+                event_type, start, stop = struct.unpack(OneHotEncodedEventSequence._EVENT_VALUE_RANGE_FORMAT, file.read(event_value_range_size))
+                value_range = None
+
+                # This is a sort of hack: if both start and stop are -1, the range is None.
+                if start != -1 and stop != -1:
+                    value_range = range(start, stop)
+
+                event_value_ranges[EventType(event_type)] = value_range
+
+            header_size += integer_size + event_value_range_size * event_value_ranges_len
+
+            # Load the time step increment
+            half_size = struct.calcsize('h')
+            time_step_increment = struct.unpack('h', file.read(half_size))
+            header_size += half_size
+
+            # Load remaining one-hot vectors
+            buffer_length = Path(filepath).stat().st_size - header_size
+            # The number of elements that the one-hot vector has.
+            one_hot_vector_length = event_ranges[next(reversed(event_ranges))].stop
+            one_hot_vector_format = OneHotEncodedEventSequence._get_one_hot_vector_format(one_hot_vector_length)
+            # The size, in bytes, of the one-hot vector.
+            one_hot_vector_size = struct.calcsize(one_hot_vector_format)
+            
+            vectors = []
+            for i in range(buffer_length // one_hot_vector_size):
+                vector = struct.unpack(one_hot_vector_format, file.read(one_hot_vector_size))
+                vectors.append(list(map(int, vector)))
+
+            return OneHotEncodedEventSequence(time_step_increment, event_ranges, event_value_ranges, vectors)
+
 
 class IntegerEncodedEventSequence(EncodedEventSequence):
     '''

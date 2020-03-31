@@ -302,7 +302,7 @@ class NoteSequence:
                 # we add a velocity event to indicate a change in velocity.
                 if current_velocity != note.velocity:
                     # Scale the velocity value so that it is in a velocity bin.
-                    # There are 128 possible velocity values: 0 to 127.
+                    # There are 128 possible velocity values for the MIDI velocity.
                     velocity_bin = (note.velocity * velocity_bins) // 128
                     events.append(Event(EventType.VELOCITY, velocity_bin))
         
@@ -418,8 +418,8 @@ class EventSequence:
         # NOTE_ON and NOTE_OFF take a MIDI pitch value which ranges from 0 to 127.
         dimensions[EventType.NOTE_ON] = 128
         dimensions[EventType.NOTE_OFF] = 128
-        # VELOCITY takes a MIDI velocity which ranges from 0 to 127.
-        dimensions[EventType.VELOCITY] = 128
+        # VELOCITY takes a MIDI velocity which ranges from 1 to the number of velocity bins.
+        dimensions[EventType.VELOCITY] = self.velocity_bins
         
         # If no max time step value is given (i.e. it is None), we just get the largest
         # time shift value in the event sequence.
@@ -456,6 +456,12 @@ class EventSequence:
         offset = 0
         ranges = collections.OrderedDict()
         for event_type, dimension in self.event_dimensions().items():
+            # If the dimension is zero, this means that the event has no parameter values.
+            # Therefore, the event merely acts a boolean: it is either on or off.
+            # However, we still require one element to encode this state.
+            if dimension == 0:
+                dimension += 1
+                
             ranges[event_type] = range(offset, offset + dimension)
             offset += dimension
         

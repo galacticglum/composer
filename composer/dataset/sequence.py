@@ -178,12 +178,12 @@ class NoteSequence:
         :param velocity_bins:
             The number of bins to quantize the note velocity values into. Defaults to 32.
         :param sustain_period_encode_mode:
-            The way in which sustain periods should be encoded. Defaults to `NoteSequence.SustainPeriodEncodeMode.EVENTS`.
+            The way in which sustain periods should be encoded. Defaults to :var:`NoteSequence.SustainPeriodEncodeMode.EVENTS`.
 
-            * If set to `NoteSequence.SustainPeriodEncodeMode.NONE`, sustain periods will be ignored.
-            * If set to `NoteSequence.SustainPeriodEncodeMode.EXTEND`, notes within sustain periods will be extended
+            * If set to :var:`NoteSequence.SustainPeriodEncodeMode.NONE`, sustain periods will be ignored.
+            * If set to :var:`NoteSequence.SustainPeriodEncodeMode.EXTEND`, notes within sustain periods will be extended
               until the end of the period or to the start of the next note of the same pitch, whichever comes first.
-            * If set to `NoteSequence.SustainPeriodEncodeMode.EVENTS`, sustain periods will be encoded as events.
+            * If set to :var:`NoteSequence.SustainPeriodEncodeMode.EVENTS`, sustain periods will be encoded as events.
         :returns:
             A list of :class:`Event` objects.
 

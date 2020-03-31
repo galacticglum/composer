@@ -6,7 +6,7 @@ The command-line interface for Composer.
 import click
 import logging
 import composer.logging_utils as logging_utils
-from composer.dataset.sequence import Note, NoteSequence
+from composer.dataset.sequence import Note, NoteSequence, SustainPeriod
 # import composer.dataset.preprocess
 
 def _set_verbosity_level(logger, value):
@@ -50,7 +50,7 @@ def preprocess(dataset_path, output_path, num_workers):
         Note(0, 4000, 1, 64),
         Note(0, 4000, 4, 64),
         Note(5000, 11000, 3, 37)
-    ])
+    ], [SustainPeriod(5000, 12000)])
 
     print('\n'.join(str(x) for x in sequence.to_event_sequence()))
     # composer.dataset.preprocess.convert_all(dataset_path, output_path, num_workers)

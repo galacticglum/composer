@@ -53,10 +53,12 @@ class EventType(Enum):
         
         '''
 
-        NOTE_ON = 0
-        NOTE_OFF = 1,
-        TIME_SHIFT = 2
-        VELOCITY = 3
+        NOTE_ON = 1
+        NOTE_OFF = 2
+        TIME_SHIFT = 3
+        VELOCITY = 4
+        SUSTAIN_ON = 5
+        SUSTAIN_OFF = 6
 
 class Event:
     '''
@@ -83,18 +85,52 @@ class Event:
     def __repr__(self):
         return 'Event(type={}, value={})'.format(self.type, self.value)
 
+class SustainPeriod:
+    '''
+    A period of time where the sustain pedal is active.
+
+    '''
+
+    def __init__(self, start, end):
+        '''
+        Initializes an instance of :class:`SustainPeriod`.
+
+        :param start:
+            The start time, in milliseconds, of the sustain period.
+        :param end:
+            The end time, in milliseconds, of the sustain period.
+
+        '''
+        self.start = start
+        self.end = end
+
+    def __repr__(self):
+        return 'SustainPeriod(start={}, end={})'.format(self.start, self.end)
+
 class NoteSequence:
     '''
     A MIDI-like sequence representation.
 
     '''
 
-    def __init__(self, notes=None):
+    class SustainPeriodEncodeMode(Enum):
+        '''
+        The mode for encoding sustain periods.
+
+        '''
+
+        NONE = 1
+        EXTEND = 2
+        EVENTS = 3
+
+    def __init__(self, notes=None, sustain_periods=None):
         '''
         Initializes an instance of :class:`NoteSequence`.
 
         :param notes:
             A list of :class:`Note` objects to add to the sequence.
+        :param sustain_periods:
+            A list of :class:`SustainPeriod` objects to add to the sequence.
         '''
 
         self.notes = []
@@ -104,6 +140,8 @@ class NoteSequence:
             # We manually reorder the notes since we disabled resorting in the add_notes call.
             # This is an optimization so that we only have to sort once: at the end.
             self.notes.sort(key=lambda x: x.start)
+
+        self.sustain_periods = sustain_periods if sustain_periods is not None else []
 
     def add_notes(self, notes, maintain_order=True):
         '''
@@ -121,7 +159,8 @@ class NoteSequence:
         if not maintain_order: return
         self.notes.sort(key=lambda x: x.start)
 
-    def to_event_sequence(self, time_step_increment=10, max_time_steps=100, velocity_bins=32):
+    def to_event_sequence(self, time_step_increment=10, max_time_steps=100, velocity_bins=32,
+                          sustain_period_encode_mode=SustainPeriodEncodeMode.EVENTS):
         '''
         Computes the event-based representation of this :class:`NoteSequence`. 
 
@@ -138,16 +177,17 @@ class NoteSequence:
             the value of the time shift event can take on.
         :param velocity_bins:
             The number of bins to quantize the note velocity values into. Defaults to 32.
+        :param sustain_period_encode_mode:
+            The way in which sustain periods should be encoded. Defaults to `NoteSequence.SustainPeriodEncodeMode.EVENTS`.
+
+            * If set to `NoteSequence.SustainPeriodEncodeMode.NONE`, sustain periods will be ignored.
+            * If set to `NoteSequence.SustainPeriodEncodeMode.EXTEND`, notes within sustain periods will be extended
+              until the end of the period or to the start of the next note of the same pitch, whichever comes first.
+            * If set to `NoteSequence.SustainPeriodEncodeMode.EVENTS`, sustain periods will be encoded as events.
         :returns:
             A list of :class:`Event` objects.
 
         '''
-
-        events = []
-
-        # Make sure that the notes are in sorted order.
-        # If they aren't then our events will also be in the wrong order!
-        ordered_notes = sorted(self.notes, key=lambda x: x.start)
 
         # We need to split each note in two separate events: on and off.
         # This way, when we sort based on time, we don't run into issues
@@ -168,26 +208,79 @@ class NoteSequence:
         # Of course, this "local" approach to building the event sequence is flawed since it fails to
         # consider the CURRENT TIME. If it did, it would become immediately obvious that the NOTE_ON(2)
         # event occurs at 1 second and that NOTE_OFF(2) occurs at 6 seconds. 
+        # 
+        # The same issue is present with sustain periods. Both notes and sustain periods are events
+        # that have duration. They are referred to as "marker objects" since their corresponding events
+        # mark whether they are on or off.
+
+        #  We split each marker into two separate events: ON and OFF. We construct a MarkerInfo
+        # object for each marker which contains the event type of the marker along with the time
+        # that the marker occurs and, if necessary, the object that the marker refers to.
+        class MarkerInfo:
+            def __init__(self, marker_type, active, time, data=None):
+                '''
+                Initializes an instance of :class:`MarkerInfo`.
+
+                :param marker_type:
+                    A string indicating the type of the marker.
+                :param active:
+                    A boolean indicating whether this marker represents an ON or OFF event.
+                    If true, it represents ON; otherwise, it represents OFF.
+                :param time:
+                    The time of the marker, in milliseconds, relative to the start of the sequence.
+                :param data:
+                    The object that the markers refers to. Defaults to ``None``.
+
+                '''
+
+                self.type = marker_type
+                self.active = active
+                self.time = time
+                self.data = data
+
+            def get_event_type(self, event_type_prefix=None):
+                '''
+                Gets the :class:`EventType` of this marker.
+
+                :param event_type_prefix:
+                    The prefix of the event type. If ``None``, it will default to :var:`MarkerInfo.type`.
+
+                '''
+
+                prefix = self.type if event_type_prefix is None else event_type_prefix
+                return EventType['{}_{}'.format(prefix, 'ON' if self.active else 'OFF')]
+
+        markers = []
+
+        # We only need to add sustain markers if we are encoding them as events.
+        if sustain_period_encode_mode == NoteSequence.SustainPeriodEncodeMode.EVENTS:
+            ordered_sustain_periods = sorted(self.sustain_periods, key=lambda x: x.start)
+            for sustain_period in ordered_sustain_periods:
+                markers.extend([
+                    MarkerInfo('SUSTAIN', True, sustain_period.start, sustain_period),
+                    MarkerInfo('SUSTAIN', False, sustain_period.end, sustain_period)
+                ])
+        elif sustain_period_encode_mode == NoteSequence.SustainPeriodEncodeMode.EXTEND:
+            pass
         
-        # We split each note into two separate events: NOTE_ON and NOTE_OFF; however, rather than
-        # using the Event class directly, we use a tuple structure: (EventType, float, Note).
-        # This is because, we have yet to create the rest of the note events and thus, we still 
-        # need the note data (such as velocity and pitch).
-        note_events = []
+        # Make sure that the notes are in sorted order.
+        # If they aren't then our events will also be in the wrong order!
+        ordered_notes = sorted(self.notes, key=lambda x: x.start)
         for note in ordered_notes:
-            on = (EventType.NOTE_ON, note.start, note)
-            off = (EventType.NOTE_OFF, note.end, note)
-            note_events.extend([on, off])
+            markers.extend([
+                MarkerInfo('NOTE', True, note.start, note),
+                MarkerInfo('NOTE', False, note.end, note)
+            ])
 
-        # Sort note events by time
-        note_events.sort(key=lambda x: x[1])
+        # Sort event markers by time
+        markers.sort(key=lambda x: x.time)
 
+        events = []
         current_time = 0
         current_velocity = 0
-        for note_event in note_events:
-            note_event_type, note_event_time, note = note_event         
+        for marker in markers:
             # The interval of time between current time and the event, in time steps.
-            interval = int(round(note_event_time - current_time) / time_step_increment)
+            interval = int(round(marker.time - current_time) / time_step_increment)
 
             # If the interval of time exceeds the max time steps, we need to break it up into
             # multiple time shift events...
@@ -199,20 +292,24 @@ class NoteSequence:
             if interval > 0:
                 events.append(Event(EventType.TIME_SHIFT, interval))
 
-            # If the note velocity is different from our current velocity,
-            # we add a velocity event to indicate a change in velocity.
-            if current_velocity != note.velocity:
-                # Scale the velocity value so that it is in a velocity bin.
-                # There are 128 possible velocity values: 0 to 127.
-                velocity_bin = (note.velocity * velocity_bins) // 128
-                events.append(Event(EventType.VELOCITY, velocity_bin))
+            if marker.type == 'NOTE': 
+                note = marker.data
 
-            
-            # Add note ON/OFF event
-            events.append(Event(note_event_type, note.pitch))
+                # If the note velocity is different from our current velocity,
+                # we add a velocity event to indicate a change in velocity.
+                if current_velocity != note.velocity:
+                    # Scale the velocity value so that it is in a velocity bin.
+                    # There are 128 possible velocity values: 0 to 127.
+                    velocity_bin = (note.velocity * velocity_bins) // 128
+                    events.append(Event(EventType.VELOCITY, velocity_bin))
+        
+                # Add note ON/OFF event
+                events.append(Event(marker.get_event_type(), note.pitch))
+                current_velocity = note.velocity
+            elif marker.type == 'SUSTAIN':
+                events.append(Event(marker.get_event_type(), None))
 
-            current_time = note_event_time
-            current_velocity = note.velocity
+            current_time = marker.time
 
         return events
 
@@ -239,6 +336,7 @@ class NoteSequence:
         with open(filepath, 'rb') as file:
             midi = PrettyMIDI(file)
             notes = []
+            sustains = []
             for instrument in midi.instruments:
                 if ignore_drums and instrument.is_drum: continue
                 if programs is not None and not instrument.program in programs: continue
@@ -246,5 +344,27 @@ class NoteSequence:
                 for midi_note in instrument.notes:
                     # PrettyMIDI timing is in seconds so we have to convert them to milliseconds.
                     notes.append(Note(midi_note.start * 1000, midi_note.end * 1000, midi_note.pitch, midi_note.velocity))
+
+                # Get all the times that a sustain control (control number 64) changes.
+                controls = [x for x in instrument.control_changes if x.number == 64]
+                current_sustain_period = None
+                for control in controls:
+                    # Convert timing of the controls to milliseconds
+                    control.time *= 1000
+
+                    # If there is no sustain period currently and the sustain is down (control value >= 64),
+                    # then this is the start of a new sustain period.
+                    if control.value >= 64 and current_sustain_period is None:
+                        current_sustain_period = SustainPeriod(control.time, None)
+                    # If control.value is less than 64, the sustain pedal has been released.
+                    elif control.value < 64:
+                        if current_sustain_period is not None:
+                            current_sustain_period.end = control.time
+                            sustains.append(current_sustain_period)
+                            current_sustain_period = None
+                        elif len(sustains) > 0:
+                            # If the sustain pedal has been released but there is no current sustain period,
+                            # that must mean that the previous sustain period has been extended.
+                            sustains[-1].end = control.time
                 
-            return NoteSequence(notes)
+            return NoteSequence(notes, sustains)

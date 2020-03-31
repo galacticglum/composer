@@ -6,7 +6,7 @@ along with their associated event encodings.
 
 import abc
 import collections
-from enum import Enum
+from enum import Enum, IntEnum
 from pathlib import Path
 from pretty_midi import PrettyMIDI
 from composer.exceptions import InvalidParameterError
@@ -49,7 +49,7 @@ class Note:
 
         return self.end - self.start
 
-class EventType(Enum):
+class EventType(IntEnum):
         '''
         The type of an :class:`Event`.
         
@@ -69,6 +69,9 @@ class Event:
 
     '''
 
+    # A reserved value for representing None as an integer.
+    NONE_VALUE = -1
+
     def __init__(self, event_type, value):
         '''
         Initialize an instance of :class:`Event`.
@@ -79,13 +82,48 @@ class Event:
             The value of the event. The type of this object depends on the 
             type of the event.
 
+            :note:
+                The value of an event is not restricted. It can be any object
+                so long as the object can be represented as int. Also, when
+                the event is decoded (after being encoded), the all values
+                will be in the form of integers. Therefore, if you are using
+                custom objects as event values, it is your responsibility
+                to convert these values back to their original objects.
+
+                The event value system is primarily designed to store integer 
+                values only. While it can be extended past this, it is not
+                supported and therefore requires a lot of manual maintenance.
+
         '''
         
         self.type = event_type
         self.value = value
 
+    @staticmethod
+    def encode_value(event):
+        '''
+        Encodes the value of an event as an integer.
+
+        '''
+
+        value = Event.NONE_VALUE
+        if event.value is not None:
+            value = int(event.value)
+
+        return value
+
+    @staticmethod
+    def decode_value(value):
+        '''
+        Decodes an event value.
+
+        '''
+        
+        return value if value != Event.NONE_VALUE else None
+
+
     def __repr__(self):
-        return 'Event(type={}, value={})'.format(self.type, self.value)
+        return 'Event(type={}, value={})'.format(str(self.type), self.value)
 
 class SustainPeriod:
     '''
@@ -414,6 +452,17 @@ class EventSequence:
 
         return OneHotEncodedEventSequence.encode(self)
 
+    def to_integer_encoding(self):
+        '''
+        Encodes this :class:`EventSequence` as series of integers.
+
+        :returns:
+            An instance of :class:`IntegerEncodedEventSequence`.
+
+        '''
+
+        return IntegerEncodedEventSequence.encode(self)
+
     def event_value_ranges(self):
         '''
         Gets the range of values for each :class:`EventType`.
@@ -688,6 +737,101 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
             The source of the encoded sequence.
         :returns:
             An instance of :class:`OneHotEncodedEventSequence`.
+
+        '''
+
+        raise NotImplementedError()
+
+class IntegerEncodedEventSequence(EncodedEventSequence):
+    '''
+    A memory efficient and compact encoding for serializing :class:`EventSequence`
+    objects to disk.
+    
+    This encoding consists of a series of integer ids that map the type and value.
+
+    :note:
+        This encoding consists of a list of two-dimensional integer tuples. Each
+        event is encoded as a tuple containing the integer id of its type along
+        with its value.
+
+    '''
+
+    def __init__(self, time_step_increment, max_time_steps, velocity_bins, events=None):
+        '''
+        Initializes an instance of :class:`IntegerEncodedEventSequence`.
+
+        :param time_step_increment:
+            The number of milliseconds that a single step in time represents.
+        :param max_time_steps:
+            The maximum number of time steps that a single event can shift time by.
+            If this is ``None``, there is no limit.
+        :param velocity_bins:
+            The number of bins to quantize the note velocity values into.
+        :param events:
+            A list of integer encoded events.
+
+        '''
+
+        self.time_step_increment = time_step_increment
+        self.max_time_steps = max_time_steps
+        self.velocity_bins = velocity_bins
+        self.events = events if events is not None else list()
+
+    @staticmethod
+    def encode(event_sequence):
+        '''
+        Encodes an :class:`EventSequence`.
+
+        :param event_sequence:
+            The :class:`EventSequence` to encode.
+        :returns:
+            An instance of :class:`IntegerEncodedEventSequence`.
+
+        '''
+
+        events = []
+        for event in event_sequence.events:
+            events.append((int(event.type), Event.encode_value(event)))
+        
+        return IntegerEncodedEventSequence(event_sequence.time_step_increment, event_sequence.max_time_steps,
+                                           event_sequence.velocity_bins, events)
+
+    def decode(self):
+        '''
+        Decodes this :class:`IntegerEncodedEventSequence`. 
+        
+        :returns:
+            An instance of :class:`EventSequence`.
+
+        '''
+
+        events = []
+        for encoded_event in self.events:
+            event_type, value = encoded_event
+            events.append(Event(EventType(event_type), Event.decode_value(value)))
+
+        return EventSequence(events, self.time_step_increment, self.max_time_steps, self.velocity_bins)
+
+    def to_file(self, filepath):
+        '''
+        Writes this :class:`IntegerEncodedEventSequence` to the specified filepath.
+
+        :param filepath:
+            The destination of the encoded sequence.
+        
+        '''
+
+        raise NotImplementedError()
+
+    @staticmethod
+    def from_file(filepath):
+        '''
+        Loads a :class:`IntegerEncodedEventSequence` from the specified filepath.
+
+        :param filepath:
+            The source of the encoded sequence.
+        :returns:
+            An instance of :class:`IntegerEncodedEventSequence`.
 
         '''
 

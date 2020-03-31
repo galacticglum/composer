@@ -53,8 +53,10 @@ def preprocess(dataset_path, output_path, num_workers):
     ], [SustainPeriod(5000, 12000)])
 
     event_sequence = sequence.to_event_sequence()
-    one_hot_encoding = event_sequence.to_one_hot_encoding()
-    print(one_hot_encoding.vectors)
-    
-    print(one_hot_encoding.decode())
+    int_encoding = event_sequence.to_integer_encoding()
+    print(int_encoding.events)
+    print(int_encoding.decode())
+    # one_hot_encoding = event_sequence.to_one_hot_encoding()
+    # print(one_hot_encoding.vectors)
+    # print(one_hot_encoding.decode())
     # composer.dataset.preprocess.convert_all(dataset_path, output_path, num_workers)

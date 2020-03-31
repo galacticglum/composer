@@ -4,6 +4,7 @@ along with their associated event encodings.
 
 '''
 
+import abc
 import collections
 from enum import Enum
 from pathlib import Path
@@ -302,7 +303,11 @@ class NoteSequence:
                 # we add a velocity event to indicate a change in velocity.
                 if current_velocity != note.velocity:
                     # Scale the velocity value so that it is in a velocity bin.
-                    # There are 128 possible velocity values for the MIDI velocity.
+                    # MIDI velocity ranges from 0 to 127.
+                    # 
+                    # The velocity bins are zero-indexed. Therefore, if we have
+                    # four bins: 0-31, 32-63, 64-95, 96-127, they are numbered
+                    # 0, 1, 2, and 3 respectively.
                     velocity_bin = (note.velocity * velocity_bins) // 128
                     events.append(Event(EventType.VELOCITY, velocity_bin))
         
@@ -399,39 +404,75 @@ class EventSequence:
         self.max_time_steps = max_time_steps
         self.velocity_bins = velocity_bins
 
-    def event_dimensions(self):
+    def to_one_hot_encoding(self):
         '''
-        Gets the dimension of each :class:`EventType`.
+        Encodes this :class:`EventSequence` as a series of one-hot encoded events
+
+        :returns:
+            An instance of :class:`OneHotEncodedEventSequence`.
+        '''
+
+        return OneHotEncodedEventSequence.encode(self)
+
+    def event_value_ranges(self):
+        '''
+        Gets the range of values for each :class:`EventType`.
 
         :note:
-            The dimension refers to the range of values that each type of event
-            accepts as parameters. If the dimension is zero, this means that the
-            event does not accept any values (i.e. :var:`Event.value` is ``None``).
+            If a range is `None`, it means that the event type does not accept any parameter values.
         :returns:
-            A :class:`collections.OrderedDict` which maps `EventType` to integers
-            representing the dimension of each event type.
-            
+            A :class:`collections.OrderedDict` which maps :class:`EventType` to a
+            :class:`range` object representing the range of values for each event type.
+
         '''
 
-        dimensions = collections.OrderedDict()
+        value_ranges = collections.OrderedDict()
 
         # NOTE_ON and NOTE_OFF take a MIDI pitch value which ranges from 0 to 127.
-        dimensions[EventType.NOTE_ON] = 128
-        dimensions[EventType.NOTE_OFF] = 128
-        # VELOCITY takes a MIDI velocity which ranges from 1 to the number of velocity bins.
-        dimensions[EventType.VELOCITY] = self.velocity_bins
+        value_ranges[EventType.NOTE_ON] = range(0, 128)
+        value_ranges[EventType.NOTE_OFF] = range(0, 128)
+
+        # VELOCITY takes a MIDI velocity which ranges from 0 to the number of velocity bins - 1.
+        # This is because velocity bins are zero-indexed.
+        value_ranges[EventType.VELOCITY] = range(0, self.velocity_bins)
         
         # If no max time step value is given (i.e. it is None), we just get the largest
         # time shift value in the event sequence.
         max_time_steps = self.max_time_steps if self.max_time_steps is not None else \
             max(event.value for event in self.events if event.type == EventType.TIME_SHIFT)
 
-        dimensions[EventType.TIME_SHIFT] = max_time_steps
+        # Time shift doesn't accept zero since it is useless to do a time shift by no time steps.
+        value_ranges[EventType.TIME_SHIFT] = range(1, max_time_steps + 1)
 
         # SUSTAIN events simply marker the start/end of a period.
         # They have no parameters...
-        dimensions[EventType.SUSTAIN_ON] = 0
-        dimensions[EventType.SUSTAIN_OFF] = 0
+        value_ranges[EventType.SUSTAIN_ON] = None
+        value_ranges[EventType.SUSTAIN_OFF] = None
+
+        return value_ranges
+
+    def event_dimensions(self):
+        '''
+        Gets the dimension of each :class:`EventType`.
+
+        :note:
+            The dimension refers to the length of the range of values that each type of event
+            accepts as parameters. If the dimension is zero, this means that the
+            event does not accept any values (i.e. :var:`Event.value` is ``None``).
+        :returns:
+            A :class:`collections.OrderedDict` which maps :class:`EventType` to integers
+            representing the dimension of each event type.
+            
+        '''
+
+        value_ranges = self.event_value_ranges()
+        dimensions = collections.OrderedDict()
+
+        for event_type, value_range in self.event_value_ranges().items():
+            if value_range is None:
+                value_range = range(0, 0)
+            
+            dimensions[event_type] = value_range.stop - value_range.start
 
         return dimensions
 
@@ -448,8 +489,8 @@ class EventSequence:
             The index range for the ON command is [0, 3] and the index range for the
             OFF command is [4, 7]. This function computes these ranges.
         :returns:
-            A :class:`collections.OrderedDict` which maps `EventType` to a :class:`range`
-            object representing the range of the event type.
+            A :class:`collections.OrderedDict` which maps :class:`EventType` to a 
+            :class:`range` object representing the range of the event type.
 
         '''
 
@@ -461,7 +502,7 @@ class EventSequence:
             # However, we still require one element to encode this state.
             if dimension == 0:
                 dimension += 1
-                
+
             ranges[event_type] = range(offset, offset + dimension)
             offset += dimension
         
@@ -469,3 +510,185 @@ class EventSequence:
 
     def __repr__(self):
         return '\n'.join(str(event) for event in self.events)
+
+class EncodedEventSequence(abc.ABC):
+    '''
+    The base class for all encoded event sequences.
+
+    '''
+
+    @abc.abstractstaticmethod
+    def encode(event_sequence):
+        '''
+        Encodes the specified :class:`EventSequence`.
+
+        :returns:
+            An instance of :class:`EncodedEventSequence`.
+
+        '''
+
+        pass
+
+    @abc.abstractmethod
+    def decode(self):
+        '''
+        Decodes this :class:`EncodedEventSequence`. 
+        
+        :returns:
+            An instance of :class:`EventSequence`.
+
+        '''
+
+        pass
+
+    @abc.abstractmethod
+    def to_file(self, filepath):
+        '''
+        Writes this :class:`EncodedEventSequence` to the specified filepath.
+
+        :param filepath:
+            The destination of the encoded sequence.
+        
+        '''
+
+        pass
+
+    @abc.abstractstaticmethod
+    def from_file(filepath):
+        '''
+        Loads a :class:`EncodedEventSequence` from the specified filepath.
+
+        :param filepath:
+            The source of the encoded sequence.
+        :returns:
+            An instance of :class:`EncodedEventSequence`.
+
+        '''
+
+        pass
+
+class MismatchedOneHotVectorError(Exception):
+    '''
+    Raised when a :class:`OneHotEncodedEventSequence` has
+    mismatched one-hot vectors (i.e. different shapes).
+
+    '''
+
+    pass
+
+class OneHotEncodedEventSequence(EncodedEventSequence):
+    '''
+    A one-hot encoded representation of an :class:`EventSequence`.
+
+    '''
+
+    def __init__(self, time_step_increment, event_ranges, event_value_ranges, vectors=None):
+        '''
+        Initializes an instance of :class:`OneHotEncodedEventSequence`.
+
+        :param time_step_increment:
+            The number of milliseconds that a single step in time represents.
+        :param event_ranges:
+            The range of each event type in the one-hot encoded vector.
+        :param event_value_ranges:
+            The range of values for each :class:`EventType`.
+        :param vectors:
+            A list of one-hot encoded vectors representing events.
+
+        '''
+
+        self.event_ranges = event_ranges
+        self.event_value_ranges = event_value_ranges
+        self.time_step_increment = time_step_increment
+        self.vectors = vectors if vectors is not None else list()
+
+    @staticmethod
+    def encode(event_sequence):
+        '''
+        Encodes an :class:`EventSequence` as a series of one-hot encoded events.
+
+        :param event_sequence:
+            The :class:`EventSequence` to encode.
+        :returns:
+            An instance of :class:`OneHotEncodedEventSequence`.
+
+        '''
+
+        event_ranges = event_sequence.event_ranges()
+        len_events = len(event_sequence.events)
+        one_hot_size = event_ranges[next(reversed(event_ranges))].stop
+
+        vectors = [None] * len_events
+        event_value_ranges = event_sequence.event_value_ranges()
+        for i in range(len_events):
+            event = event_sequence.events[i]
+
+            index_offset = 0
+            if event.value is not None:
+                index_offset = event.value - event_value_ranges[event.type].start
+
+            vectors[i] = [0] * one_hot_size
+            vectors[i][event_ranges[event.type].start + index_offset] = 1
+
+        return OneHotEncodedEventSequence(event_sequence.time_step_increment, 
+                                          event_ranges, event_value_ranges, vectors)
+
+    def decode(self):
+        '''
+        Decodes this :class:`OneHotEncodedEventSequence`. 
+        
+        :returns:
+            An instance of :class:`EventSequence`.
+
+        '''
+
+        if not all(len(vector) == len(self.vectors[0]) for vector in self.vectors):
+            raise MismatchedOneHotVectorError()
+
+        events = []
+        for vector in self.vectors:
+            hot_index = vector.index(1)
+            for event_type, event_range in self.event_ranges.items():
+                if hot_index in event_range: break
+
+            value = None
+            if self.event_value_ranges[event_type] is not None:
+                value = hot_index - event_range.start + self.event_value_ranges[event_type].start
+
+            events.append(Event(event_type, value))
+        
+        # The max time steps value is the largest time step value that
+        # the time shift event accepts. Therefore, we can use this range
+        # to find the max_time_steps value.
+        max_time_steps = self.event_value_ranges[EventType.TIME_SHIFT].stop
+
+        # The velocity event value ranges from 0 to the velocity bin count.
+        # Thus, we can use this range to find the velocity_bins value.
+        velocity_bins = self.event_value_ranges[EventType.VELOCITY].stop
+
+        return EventSequence(events, self.time_step_increment, max_time_steps, velocity_bins)
+
+    def to_file(self, filepath):
+        '''
+        Writes this :class:`OneHotEncodedEventSequence` to the specified filepath.
+
+        :param filepath:
+            The destination of the encoded sequence.
+        
+        '''
+
+        raise NotImplementedError()
+
+    @staticmethod
+    def from_file(filepath):
+        '''
+        Loads a :class:`OneHotEncodedEventSequence` from the specified filepath.
+
+        :param filepath:
+            The source of the encoded sequence.
+        :returns:
+            An instance of :class:`OneHotEncodedEventSequence`.
+
+        '''
+
+        raise NotImplementedError()

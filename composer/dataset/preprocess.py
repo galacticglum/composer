@@ -3,30 +3,41 @@ Preprocesses a raw dataset so that it can be used by the models.
 
 '''
 
-import click
-import pickle
 import hashlib
 import logging
+from tqdm import tqdm
 from pathlib import Path
-from concurrent.futures import ProcessPoolExecutor
+from composer.utils import parallel_process
 from composer.dataset.sequence import NoteSequence
 
-def convert_file(filepath):
+def convert_file(filepath, output_path):
     '''
     Converts a music file to a set of sequences.
 
+    :param filepath:
+        The path to the file to convert.
+    :param output_path:
+        The directory to output the file to.
+
     '''
 
-    pass
+    filename = Path(filepath).stem
+    file_id = hashlib.md5(str(filepath).encode()).hexdigest()
+    file_save_path = output_path / '{}_{}.data'.format(filename, file_id)
 
-def convert_all(dataset_path, output_path=None, num_workers=8):
+    # Load the MIDI file into a NoteSequence and convert it into an EventSequence.
+    event_sequence = NoteSequence.from_midi(filepath).to_event_sequence()
+    # Encode the event sequence and write to file.
+    event_sequence.to_integer_encoding().to_file(file_save_path)
+
+def convert_all(dataset_path, output_path, num_workers=8):
     '''
     Converts all music files in a dataset directory to a compact format readable by the Composer models.
 
     :param dataset_path:
         The path to the dataset directory.
     :param output_path:
-        The directory where the preprocessed data will be saved. Defaults to a "processed" folder in the dataset_path directory.
+        The directory where the preprocessed data will be saved.
     :param num_workers:
         The number of worker threads to spawn. Defaults to 8.
 
@@ -46,19 +57,9 @@ def convert_all(dataset_path, output_path=None, num_workers=8):
     output_path = Path(dataset_path / 'processed' if output_path is None else output_path)
     output_path.mkdir(exist_ok=True, parents=True)
     
-    results = []
-    executor = ProcessPoolExecutor(num_workers)
-    for filepath in filepaths:
-        results.append((filepath, executor.submit(convert_file, filepath)))
-    
-    with click.progressbar(length=len(results)) as bar:
-        for filepath, future in results:    
-            bar.label = filepath
+    # Run the convert_file method on each file in filepaths.
+    process_kwargs = [{'filepath': file, 'output_path': output_path} for file in filepaths]
+    parallel_process(process_kwargs, convert_file, use_kwargs=True)
 
-            filename = Path(filepath).stem
-            file_id = hashlib.md5(filepath.encode()).hexdigest()
-            file_save_path = output_path / '{}_{}.dat'.format(filename, file_id)
-            with open(file_save_path, 'wb+') as save_file_handler:
-                pickle.dump(future.result(), save_file_handler)
-
-            bar.update(1)
+    # for i in tqdm(range(len(filepaths))):
+    #     convert_file(filepaths[i], output_path)

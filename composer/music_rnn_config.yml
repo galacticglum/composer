@@ -11,6 +11,5 @@ model:
     dense_layer_size: 256
     use_batch_normalization: true
 train:
-    tranpose_dataset: true
     batch_size: 64
     learning_rate: 0.001

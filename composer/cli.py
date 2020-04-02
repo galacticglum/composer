@@ -11,7 +11,6 @@ import composer.dataset.preprocess
 
 from pathlib import Path
 from enum import Enum, unique
-from composer import models
 from composer.click_utils import EnumType
 
 def _set_verbosity_level(logger, value):
@@ -40,22 +39,25 @@ def cli(ctx, verbosity):
     
 @cli.command()
 @click.argument('dataset-path')
-@click.option('--output-path', '-o',  default=None, \
-    help='The directory where the preprocessed data will be saved. Defaults to a "processed" folder in the DATASET_PATH directory.')
+@click.argument('output_directory')
 @click.option('--num-workers', '-w', default=16, help='The number of worker threads to spawn. Defaults to 16.')
-def preprocess(dataset_path, output_path, num_workers):
+@click.option('--transform/--no-transform', default=False, help='Indicates whether the dataset should be transformed. ' +
+              'If true, a percentage of the dataset is duplicated and pitch shifted and/or time-stretched.')
+@click.option('--transform-percent', default=0.05, help='The percentage of the dataset that should be transformed.')
+@click.option('--split/--no-split', default=True, help='Indicates whether the dataset should be split into train and test sets.')
+@click.option('--test-percent', default=0.30, help='The percentage of the dataset that is allocated to testing.')
+def preprocess(dataset_path, output_directory, num_workers, transform, transform_percent, split, test_percent):
     '''
     Preprocesses a raw dataset so that it can be used by the models.
 
-    DATASET_PATH is the path to the dataset that will be preprocessed.
-
     '''
 
-    if output_path is None:
-        output_path = Path(dataset_path) / 'processed'
-        
-    composer.dataset.preprocess.convert_all(dataset_path, output_path, num_workers)
+    output_directory = Path(output_directory)
 
+    if split:
+        composer.dataset.preprocess.split_dataset(dataset_path, output_directory, test_percent, num_workers)
+    else:
+        composer.dataset.preprocess.convert_all(dataset_path, output_directory, num_workers)
 
 @unique
 class ModelType(Enum):
@@ -80,6 +82,8 @@ class ModelType(Enum):
         '''
 
         def _create_music_rnn():
+            from composer import models
+
             return models.MusicRNN(
                 kwargs['event_dimensions'], config.model.window_size, config.model.lstm_layers_count,
                 config.model.lstm_layer_sizes, config.model.lstm_dropout_probability, 

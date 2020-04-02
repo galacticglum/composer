@@ -201,6 +201,23 @@ class NoteSequence:
         if not maintain_order: return
         self.notes.sort(key=lambda x: x.start)
 
+    def time_stretch(self, percent):
+        '''
+        Stretches this :class:`NoteSequence` in time by a factor of the original time.
+
+        :param percent:
+            The percent (0 to 1) of the original time to stretch.
+
+        '''
+
+        for note in self.notes:
+            note.start *= percent
+            note.end *= percent
+
+        for sustain_period in self.sustain_periods:
+            sustain_period.start *= percent
+            sustain_period.end *= percent
+
     def to_event_sequence(self, time_step_increment=10, max_time_steps=100, velocity_bins=32,
                           sustain_period_encode_mode=SustainPeriodEncodeMode.EVENTS):
         '''

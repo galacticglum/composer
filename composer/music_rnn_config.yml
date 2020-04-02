@@ -5,6 +5,7 @@
 
 model:
     window_size: 200
+    lstm_layers_count: 3
     lstm_layer_sizes: 512
     lstm_dropout_probability: 0.3
     dense_layer_size: 256

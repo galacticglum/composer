@@ -55,7 +55,7 @@ def get(filepath):
     :param filepath:
         The path to the configuration file.
     :returns:
-        An instance of :class:``ConfigInstance``.
+        An instance of :class:`ConfigInstance`.
 
     '''
 

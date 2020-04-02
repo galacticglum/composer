@@ -42,10 +42,10 @@ class MusicRNN(Model):
             (equal in size to the ``lstm_layers_count`` parameter) that denotes the dropout probability
             per LSTM layer in the network.
         :param dense_layer_size:
-            The number of units in the hidden :class:``tensorflow.keras.layers.Dense`` layer preceeding the output.
+            The number of units in the hidden :class:`tensorflow.keras.layers.Dense` layer preceeding the output.
             Defaults to 256.
         :param use_batch_normalization:
-            Indicates whether each LSTM layer should be followed by a :class:``tensorflow.keras.layers.BatchNormalization``
+            Indicates whether each LSTM layer should be followed by a :class:`tensorflow.keras.layers.BatchNormalization`
             layer. Defaults to ``True``. 
         :note:
             This sets up the model architecture and layers.

@@ -1,0 +1,1 @@
+from composer.models.music_rnn import MusicRNN

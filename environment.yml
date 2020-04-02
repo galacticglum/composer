@@ -11,3 +11,4 @@ dependencies:
     - pretty-midi==0.2.8
     - tqdm==4.44.1
     - tensorflow-gpu==2.1.1
+    - pyyaml==5.3.1

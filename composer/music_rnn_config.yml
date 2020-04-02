@@ -4,12 +4,12 @@
 # duplicate this file and specify a custom configuration flag in the CLI.
 
 model:
-    - window_size: 200
-    - lstm_layer_sizes: 512
-    - lstm_dropout_probability: 0.3
-    - dense_layer_size: 256
-    - use_batch_normalization: true
+    window_size: 200
+    lstm_layer_sizes: 512
+    lstm_dropout_probability: 0.3
+    dense_layer_size: 256
+    use_batch_normalization: true
 train:
-    - tranpose_dataset: true
-    - batch_size: 64
-    - learning_rate: 0.001
+    tranpose_dataset: true
+    batch_size: 64
+    learning_rate: 0.001

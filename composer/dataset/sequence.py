@@ -5,6 +5,7 @@ along with their associated event encodings.
 '''
 
 import abc
+import copy
 import struct
 import itertools
 import collections
@@ -202,14 +203,24 @@ class NoteSequence:
         if not maintain_order: return
         self.notes.sort(key=lambda x: x.start)
 
-    def time_stretch(self, percent):
+    def time_stretch(self, percent, inplace=True):
         '''
         Stretches this :class:`NoteSequence` in time by a factor of the original time.
 
         :param percent:
             The percent (0 to 1) of the original time to stretch.
+        :param inplace:
+            Indicates whether the operation should be applied inplace. Defaults to ``True``.
+
+            Note: non-inplace operations require more memory since a deepcopy has to be performed.
+        :returns:
+            An instance of :class:`NoteSequence` with the applied modifications.
 
         '''
+
+        _copy_func = lambda x: x if inplace else copy.deepcopy(x)
+        notes = _copy_func(self.notes)
+        sustain_periods = _copy_func(self.sustain_periods)
 
         for note in self.notes:
             note.start *= percent
@@ -219,7 +230,9 @@ class NoteSequence:
             sustain_period.start *= percent
             sustain_period.end *= percent
 
-    def pitch_shift(self, offset):
+        return self if inplace else NoteSequence(notes, sustain_periods)
+
+    def pitch_shift(self, offset, inplace=True):
         '''
         Shifts the pitch of all notes in this :class:`NoteSequence` by a specified offset.
 
@@ -229,11 +242,22 @@ class NoteSequence:
 
         :param offset:
             The amount to shift the pithc of each note.
+        :param inplace:
+            Indicates whether the operation should be applied inplace. Defaults to ``True``.
+
+            Note: non-inplace operations require more memory since a deepcopy has to be performed.
+        :returns:
+            An instance of :class:`NoteSequence` with the applied modifications.
 
         '''
 
-        for note in self.notes:
+        _copy_func = lambda x: x if inplace else copy.deepcopy(x)
+        notes = _copy_func(self.notes)
+
+        for note in notes:
             note.pitch = np.clip(note.pitch + offset, 0, 127)
+
+        return self if inplace else NoteSequence(notes, copy.deepcopy(self.sustain_periods))
 
     def to_event_sequence(self, time_step_increment=10, max_time_steps=100, velocity_bins=32,
                           sustain_period_encode_mode=SustainPeriodEncodeMode.EVENTS, clean=True):

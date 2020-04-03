@@ -5,6 +5,7 @@ The command-line interface for Composer.
 
 import click
 import logging
+import numpy as np
 import composer.config
 import composer.logging_utils as logging_utils
 import composer.dataset.preprocess
@@ -27,12 +28,15 @@ def _set_verbosity_level(logger, value):
         
 @click.group()
 @click.option('--verbosity', '-v', default='INFO', help='Either CRITICAL, ERROR, WARNING, INFO, or DEBUG.')
+@click.option('--seed', default=None, help='Sets the seed of the random engine.')
 @click.pass_context
-def cli(ctx, verbosity):
+def cli(ctx, verbosity, seed):
     '''
     A deep learning enabled music generator.
 
     '''
+
+    np.random.seed(seed)
 
     logging_utils.init()
     _set_verbosity_level(logging.getLogger(), verbosity)
@@ -42,10 +46,12 @@ def cli(ctx, verbosity):
 @click.argument('output_directory')
 @click.option('--num-workers', '-w', default=16, help='The number of worker threads to spawn. Defaults to 16.')
 @click.option('--transform/--no-transform', default=False, help='Indicates whether the dataset should be transformed. ' +
-              'If true, a percentage of the dataset is duplicated and pitch shifted and/or time-stretched.')
-@click.option('--transform-percent', default=0.05, help='The percentage of the dataset that should be transformed.')
-@click.option('--split/--no-split', default=True, help='Indicates whether the dataset should be split into train and test sets.')
-@click.option('--test-percent', default=0.30, help='The percentage of the dataset that is allocated to testing.')
+              'If true, a percentage of the dataset is duplicated and pitch shifted and/or time-stretched. Defaults to False.\n' +
+              'Note: transforming a single sample produces three new samples: a pitch shifted one, time stretched one, and one with ' +
+              'a combination of both. A transform percent value of 5%% means that the dataset will GROW by 3 times 5%% of the total size.')
+@click.option('--transform-percent', default=0.50, help='The percentage of the dataset that should be transformed. Defaults to 50%% of the dataset.')
+@click.option('--split/--no-split', default=True, help='Indicates whether the dataset should be split into train and test sets. Defaults to True.')
+@click.option('--test-percent', default=0.30, help='The percentage of the dataset that is allocated to testing. Defaults to 30%%')
 def preprocess(dataset_path, output_directory, num_workers, transform, transform_percent, split, test_percent):
     '''
     Preprocesses a raw dataset so that it can be used by the models.
@@ -55,7 +61,7 @@ def preprocess(dataset_path, output_directory, num_workers, transform, transform
     output_directory = Path(output_directory)
 
     if split:
-        composer.dataset.preprocess.split_dataset(dataset_path, output_directory, test_percent, num_workers)
+        composer.dataset.preprocess.split_dataset(dataset_path, output_directory, test_percent, transform, transform_percent, num_workers)
     else:
         composer.dataset.preprocess.convert_all(dataset_path, output_directory, num_workers)
 

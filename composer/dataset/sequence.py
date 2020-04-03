@@ -8,6 +8,7 @@ import abc
 import struct
 import itertools
 import collections
+import numpy as np
 from enum import Enum, IntEnum
 from pathlib import Path
 from pretty_midi import PrettyMIDI, Instrument, Note as MIDINote, ControlChange
@@ -222,13 +223,17 @@ class NoteSequence:
         '''
         Shifts the pitch of all notes in this :class:`NoteSequence` by a specified offset.
 
+        :note:
+            This will clamp the pitch of a note between 0 and 127; that is, if a note has a negative
+            pitch or one that exceeds 127, it will have a final pitch of 0 or 127 respectively.
+
         :param offset:
             The amount to shift the pithc of each note.
 
         '''
 
         for note in self.notes:
-            note.pitch += offset
+            note.pitch = np.clip(note.pitch + offset, 0, 127)
 
     def to_event_sequence(self, time_step_increment=10, max_time_steps=100, velocity_bins=32,
                           sustain_period_encode_mode=SustainPeriodEncodeMode.EVENTS, clean=True):

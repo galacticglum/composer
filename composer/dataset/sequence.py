@@ -728,6 +728,36 @@ class EventSequence:
 
         return NoteSequence(notes, sustain_periods)
 
+    @staticmethod
+    def from_file(filepath, decode=True):
+        '''
+        Creates an :class:`EventSequence` from an :class:`EncodedEventSequence` serialized as a file.
+
+        :param filepath:
+            The path to the file containing the encoded event sequence.
+        :param decode:
+            Indicates whether the file should be decoded. If ``True``, it is decoded into an :class:`EventSequence`.
+            Otherwise, it is left encoded as an :class:`EncodedEventSequence`.
+        :returns:
+            An instance of :class:`EventSequence` if ``decode`` is ``True``; otherwise, returns an instance of  :class:`EncodedEventSequence`.
+
+        '''
+
+        _ENCODING_TYPE_MAP = {
+            OneHotEncodedEventSequence.get_encoding_type(): OneHotEncodedEventSequence,
+            IntegerEncodedEventSequence.get_encoding_type(): IntegerEncodedEventSequence 
+        }
+
+        filepath = Path(filepath)
+        with open(filepath, 'rb') as file:
+            encoding_type_id = _load_encoding_type_id(file)
+            if encoding_type_id not in _ENCODING_TYPE_MAP:
+                raise InvalidEncodingTypeError('Cannot load \'{}\' as an EventSequence! \'{}\' is not a valid encoding type id.' \
+                                                .format(filepath, encoding_type_id))
+        
+        result =  _ENCODING_TYPE_MAP[encoding_type_id].from_file(filepath)
+        return result.decode() if decode else result
+
     def __repr__(self):
         return '\n'.join(str(event) for event in self.events)
 
@@ -736,6 +766,9 @@ class EncodedEventSequence(abc.ABC):
     The base class for all encoded event sequences.
 
     '''
+
+    # The format of the encoding type ID (unsigned long long)
+    _ENCODING_TYPE_ID_FORMAT = 'Q'
 
     @abc.abstractstaticmethod
     def encode(event_sequence):
@@ -787,10 +820,48 @@ class EncodedEventSequence(abc.ABC):
 
         pass
 
+    @abc.abstractstaticmethod
+    def get_encoding_type():
+        '''
+        Gets the unique identifier for this type of :class:`EncodedEventSequence`.
+
+        :note:
+            The encoding type ID is the first integer in all serialized :class:`EncodedEventSequence`.
+            It allows the decoder to infer the encoding type at runtime without having to read the format.
+
+        :returns:
+            An integer value representing the encoding type.
+        '''
+
+        pass
+
+def _load_encoding_type_id(file):
+    '''
+    Loads an encoding type ID header from specfiied file object.
+    
+    :param file:
+        A file-like object.
+
+    '''
+
+    pack_format = EncodedEventSequence._ENCODING_TYPE_ID_FORMAT
+    encoding_type_id, = struct.unpack(pack_format, file.read(struct.calcsize(pack_format)))
+
+    return encoding_type_id
+
 class MismatchedOneHotVectorError(Exception):
     '''
     Raised when a :class:`OneHotEncodedEventSequence` has
     mismatched one-hot vectors (i.e. different shapes).
+
+    '''
+
+    pass
+
+class InvalidEncodingTypeError(Exception):
+    '''
+    Raised when an :class:`EncodedEventSequence` has an invalid
+    encoding type header.
 
     '''
 
@@ -829,6 +900,18 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
         self.vectors = vectors if vectors is not None else list()
 
     @staticmethod
+    def get_one_hot_size(event_ranges):
+        '''
+        Gets the size of the one-hot vector that is needed to encode an :class:`Event`
+        with the specified event ranges.
+
+        :param event_ranges:
+            The range of each event type in the one-hot encoded vector.
+
+        '''
+        return event_ranges[next(reversed(event_ranges))].stop
+
+    @staticmethod
     def encode(event_sequence):
         '''
         Encodes an :class:`EventSequence` as a series of one-hot encoded events.
@@ -842,7 +925,7 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
 
         event_ranges = event_sequence.event_ranges()
         len_events = len(event_sequence.events)
-        one_hot_size = event_ranges[next(reversed(event_ranges))].stop
+        one_hot_size = OneHotEncodedEventSequence.get_one_hot_size(event_ranges)
 
         vectors = [None] * len_events
         event_value_ranges = event_sequence.event_value_ranges()
@@ -911,13 +994,14 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
             unpacked_event_value_ranges = list(itertools.chain(*[(int(_type), _range.start if _range is not None else -1, \
                 _range.stop if _range is not None else -1) for _type, _range in self.event_value_ranges.items()]))
 
-            file.write(struct.pack(header_format, 
+            file.write(struct.pack(EncodedEventSequence._ENCODING_TYPE_ID_FORMAT + header_format, 
+                self.__class__.get_encoding_type(),
                 len(self.event_ranges), *unpacked_event_ranges,
                 len(self.event_value_ranges), *unpacked_event_value_ranges,
                 self.time_step_increment
             ))
 
-            one_hot_size = self.event_ranges[next(reversed(self.event_ranges))].stop
+            one_hot_size = OneHotEncodedEventSequence.get_one_hot_size(self.event_ranges)
             one_hot_vector_format = OneHotEncodedEventSequence._get_one_hot_vector_format(one_hot_size)
             for vector in self.vectors:
                 file.write(struct.pack(one_hot_vector_format, *vector))
@@ -957,8 +1041,14 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
         '''
 
         with open(filepath, 'rb') as file:
+            # Read the encoding type id
+            encoding_type_id = _load_encoding_type_id(file)
+            if encoding_type_id != OneHotEncodedEventSequence.get_encoding_type():
+                raise InvalidEncodingTypeError('Cannot decode \'{}\' as OneHotEncodedEventSequence since the ' + 
+                                               'encoding type id header does not match.'.format(filepath))
+
             integer_size = struct.calcsize('i')
-            header_size = 0
+            header_size = struct.calcsize(EncodedEventSequence._ENCODING_TYPE_ID_FORMAT)
 
             # Load the event ranges
             event_ranges_len, = struct.unpack('i', file.read(integer_size))
@@ -988,13 +1078,13 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
 
             # Load the time step increment
             half_size = struct.calcsize('h')
-            time_step_increment = struct.unpack('h', file.read(half_size))
+            time_step_increment, = struct.unpack('h', file.read(half_size))
             header_size += half_size
 
             # Load remaining one-hot vectors
             buffer_length = Path(filepath).stat().st_size - header_size
             # The number of elements that the one-hot vector has.
-            one_hot_vector_length = event_ranges[next(reversed(event_ranges))].stop
+            one_hot_vector_length = OneHotEncodedEventSequence.get_one_hot_size(event_ranges)
             one_hot_vector_format = OneHotEncodedEventSequence._get_one_hot_vector_format(one_hot_vector_length)
             # The size, in bytes, of the one-hot vector.
             one_hot_vector_size = struct.calcsize(one_hot_vector_format)
@@ -1005,6 +1095,20 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
                 vectors.append(list(map(int, vector)))
 
             return OneHotEncodedEventSequence(time_step_increment, event_ranges, event_value_ranges, vectors)
+
+    def get_encoding_type():
+        '''
+        Gets the unique identifier for this type of :class:`OneHotEncodedEventSequence`.
+
+        :note:
+            The encoding type ID is the first integer in all serialized :class:`OneHotEncodedEventSequence`.
+            It allows the decoder to infer the encoding type at runtime without having to read the format.
+
+        :returns:
+            An integer value representing the encoding type.
+        '''
+
+        return 9223372036854775806
 
 
 class IntegerEncodedEventSequence(EncodedEventSequence):
@@ -1096,10 +1200,13 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             # Each event is encoded as an integer tuple.
             events_format = IntegerEncodedEventSequence._EVENT_FORMAT * len(self.events)
 
-            # The first three integers are dedicated for describing the event sequence:
+            # The first integer is for the encoding type id.
+            # The next three integers are dedicated for describing the event sequence:
             #   Values: time step increments, max time steps, and velocity bins.
-            encoded_sequence = struct.pack(IntegerEncodedEventSequence._HEADER_FORMAT + events_format, 
-                self.time_step_increment, self.max_time_steps, self.velocity_bins,
+            encoded_sequence = struct.pack(EncodedEventSequence._ENCODING_TYPE_ID_FORMAT + 
+                IntegerEncodedEventSequence._HEADER_FORMAT + events_format,
+                self.__class__.get_encoding_type(), self.time_step_increment,
+                self.max_time_steps, self.velocity_bins,
                 *list(itertools.chain(*self.events))
             )
             
@@ -1118,9 +1225,18 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
         '''
 
         with open(filepath, 'rb') as file:
+            # Read the encoding type id
+            encoding_type_id = _load_encoding_type_id(file)
+            if encoding_type_id != IntegerEncodedEventSequence.get_encoding_type():
+                raise InvalidEncodingTypeError('Cannot decode \'{}\' as IntegerEncodedEventSequence since the ' + 
+                                               'encoding type id header does not match.'.format(filepath))
+
             header_size = struct.calcsize(IntegerEncodedEventSequence._HEADER_FORMAT)
             time_step_increment, max_time_steps, velocity_bins = struct.unpack(IntegerEncodedEventSequence._HEADER_FORMAT, file.read(header_size))
-            
+            # We have to add this since the header includes the encoding type id; however, we read it seperately so that we can
+            # "short-circuit" the rest of the reading in case that the encoding type id doesn't match.
+            header_size += struct.calcsize(EncodedEventSequence._ENCODING_TYPE_ID_FORMAT)
+
             event_size = struct.calcsize(IntegerEncodedEventSequence._EVENT_FORMAT)
             buffer_length = Path(filepath).stat().st_size - header_size
 
@@ -1130,3 +1246,17 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
                 events.append((event_type, value))
 
             return IntegerEncodedEventSequence(time_step_increment, max_time_steps, velocity_bins, events)
+
+    def get_encoding_type():
+        '''
+        Gets the unique identifier for this type of :class:`IntegerEncodedEventSequence`.
+
+        :note:
+            The encoding type ID is the first integer in all serialized :class:`IntegerEncodedEventSequence`.
+            It allows the decoder to infer the encoding type at runtime without having to read the format.
+
+        :returns:
+            An integer value representing the encoding type.
+        '''
+
+        return 9223372036854775805

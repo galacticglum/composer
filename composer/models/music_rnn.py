@@ -6,7 +6,9 @@ more information about the event-based sequence description.)
 '''
 
 import numpy as np
+import tensorflow as tf
 from tensorflow.keras import Model, layers
+from composer.dataset.sequence import EventSequence
 
 class MusicRNN(Model):
     '''
@@ -123,3 +125,51 @@ class MusicRNN(Model):
         inputs = self.output_layer(inputs)
 
         return inputs
+
+def create_music_rnn_dataset(filepaths, batch_size, window_size):
+    '''
+    Creates a dataset for the :class:`MusicRNN` model.
+
+    :param filepaths:
+        An array-like object of Path-like objects representing the filepaths of the encoded event sequences.
+    :param batch_size:
+        The number of samples to include a single batch.
+    :param window_size:
+        The number of events in a single input sequence.
+    :returns:
+        A :class:`tensorflow.data.BatchDataset` object representing the dataset in batches.
+
+    '''
+
+    def _generator(filepaths, window_size):
+            '''
+            The generator function for loading the dataset.
+
+            '''
+
+            for filepath in filepaths:
+                # TensorFlow automatically converts string arguments to bytes so we need to decode back to strings.
+                decoded_filepath = bytes(filepath).decode('utf-8')
+                one_hot_vectors = EventSequence.from_file(decoded_filepath).to_one_hot_encoding()
+                
+                # The number of one-hot vectors that we can extract from the sample.
+                # While every input sequence only contains window_size number of one-hot vectors,
+                # we also need an additional one-hot vector for the output (label).
+                # Therefore, we pull window_size + 1 elements.
+                extract_events_count = window_size + 1
+                event_count = len(one_hot_vectors.vectors) // extract_events_count
+                for i in range(event_count):
+                    start, end = i * extract_events_count, extract_events_count * (i + 1)
+                    vectors = one_hot_vectors.vectors[start:end]
+
+                    # Split the vectors into inputs (x) and outputs (y)
+                    x, y = np.asarray(vectors[:-1]), np.asarray(vectors[-1])
+                    yield x, y
+
+    # Create the tensorflow dataset object
+    filepaths = [str(path) for path in filepaths]
+    return tf.data.Dataset.from_generator(
+        _generator,
+        output_types=(tf.int8, tf.int8),
+        args=(filepaths, window_size)
+    ).batch(batch_size)

@@ -10,3 +10,11 @@ class InvalidParameterError(Exception):
     '''
 
     pass
+
+class DatasetError(Exception):
+    '''
+    Raised when there is a dataset related error.
+    
+    '''
+
+    pass

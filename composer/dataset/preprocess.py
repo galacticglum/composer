@@ -11,6 +11,9 @@ from pathlib import Path
 from composer.utils import parallel_process
 from composer.dataset.sequence import NoteSequence
 
+# The extension of preprocessed files.
+_OUTPUT_EXTENSION = 'data'
+
 def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.95, 1.05), pitch_shift_range=(-6, 6)):
     '''
     Converts a music file to a set of sequences.
@@ -32,7 +35,7 @@ def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.9
 
     filename = Path(filepath).stem
     file_id = hashlib.md5(str(filepath).encode()).hexdigest()
-    file_save_path = output_path / '{}_{}.data'.format(filename, file_id)
+    file_save_path = output_path / '{}_{}.{}'.format(filename, file_id, _OUTPUT_EXTENSION)
 
     # Load the MIDI file into a NoteSequence and convert it into an EventSequence.
     note_sequence = NoteSequence.from_midi(filepath)
@@ -67,9 +70,14 @@ def _check_dataset_path(dataset_path):
 _SUPPORTED_EXTENSIONS = ('mid', 'midi')
 
 def _get_dataset_files(dataset_path):
-   filepaths = []
-   for extension in _SUPPORTED_EXTENSIONS:
-    filepaths.extend(dataset_path.glob('**/*.{}'.format(extension)))
+    '''
+    Gets all the music files in the specified directory for preprocessing.
+
+    '''
+    
+    filepaths = []
+    for extension in _SUPPORTED_EXTENSIONS:
+        filepaths.extend(dataset_path.glob('**/*.{}'.format(extension)))
     
     return filepaths
 

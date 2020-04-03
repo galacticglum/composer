@@ -16,6 +16,7 @@ import composer.dataset.preprocess
 from pathlib import Path
 from enum import Enum, unique
 from composer.click_utils import EnumType
+from composer.exceptions import DatasetError
 
 def _set_verbosity_level(logger, value):
     '''
@@ -51,7 +52,7 @@ def cli(ctx, verbosity, seed):
 
 @cli.command()
 @click.argument('dataset-path')
-@click.argument('output_directory')
+@click.argument('output-directory')
 @click.option('--num-workers', '-w', default=16, help='The number of worker threads to spawn. Defaults to 16.')
 @click.option('--transform/--no-transform', default=False, help='Indicates whether the dataset should be transformed. ' +
               'If true, a percentage of the dataset is duplicated and pitch shifted and/or time-stretched. Defaults to False.\n' +
@@ -113,6 +114,7 @@ class ModelType(Enum):
             A :class:`tensorflow.keras.Model` object representing an instance of the specfiied model.
         '''
 
+        # Creates the MusicRNN model.
         def _create_music_rnn():
             from composer import models
 
@@ -125,7 +127,49 @@ class ModelType(Enum):
         # An easy way to map the creation functions to their respective types.
         # This is a lot better than doing something like an if/elif statement.
         function_map = {
-            MUSIC_RNN: _create_music_rnn
+            ModelType.MUSIC_RNN: _create_music_rnn
+        }
+
+        return function_map[self]()
+    
+    def get_train_test_set(self, dataset_path, config):
+        '''
+        Loads the training and testing datasets for this :class:`ModelType`
+        using the values in the specified :class:`composer.config.ConfigInstance` object.
+
+        :param dataset_path:
+            The path to the preprocessed dataset organized into two subdirectories: train and test.
+        :param config:
+            A :class:`composer.config.ConfigInstance` containing the configuration values.
+        :returns:
+            Two :class:`tensorflow.data.Dataset` objects representing the training and testing
+            datasets respectively. 
+        
+        '''
+
+        dataset_path = Path(dataset_path)
+        train_dataset_path = dataset_path / 'train'
+        test_dataset_path = dataset_path / 'test'
+        if not train_dataset_path.exists() or not test_dataset_path.exists():
+            raise DatasetError('Could not get train/test datasets since the specified dataset directory, ' +
+                               '\'{}\', has no train or test folder.'.fromat(dataset_path))
+
+        # Get all the dataset files in each directory (train and test)
+        train_files = train_dataset_path.glob('**/*.{}'.format(composer.dataset.preprocess._OUTPUT_EXTENSION))
+        test_files = test_dataset_path.glob('**/*.{}'.format(composer.dataset.preprocess._OUTPUT_EXTENSION))
+
+        # Creates the MusicRNNDataset.
+        def _load_music_rnn_dataset():
+            from composer.models.music_rnn import create_music_rnn_dataset
+            train_set = create_music_rnn_dataset(train_files, config.train.batch_size, config.model.window_size)
+            test_set = create_music_rnn_dataset(test_files, config.train.batch_size, config.model.window_size)
+
+            return train_set, test_set
+
+        # An easy way to map the creation functions to their respective types.
+        # This is a lot better than doing something like an if/elif statement.
+        function_map = {
+            ModelType.MUSIC_RNN: _load_music_rnn_dataset
         }
 
         return function_map[self]()
@@ -134,10 +178,11 @@ class ModelType(Enum):
 _MUSIC_RNN_DEFAULT_CONFIG = Path(__file__).parent / 'music_rnn_config.yml'
 
 @cli.command()
-@click.argument('model_type', type=EnumType(ModelType, False))
+@click.argument('model-type', type=EnumType(ModelType, False))
+@click.argument('dataset-path')
 @click.option('-c', '--config', 'config_filepath', default=None, 
               help='The path to the model configuration file. If unspecified, uses the default config for the model.')
-def train(model_type, config_filepath):
+def train(model_type, dataset_path, config_filepath):
     '''
     Trains the specified model.
 
@@ -147,6 +192,9 @@ def train(model_type, config_filepath):
         config_filepath = _MUSIC_RNN_DEFAULT_CONFIG
 
     config = composer.config.get(config_filepath)
-    model = model_type.create_model(config)
+    train_dataset, test_dataset = model_type.get_train_test_set(dataset_path, config)
+    for batch in train_dataset.take(2):
+        print([arr.shape for arr in batch])
+    # model = model_type.create_model(config)
 
-    print(model)
+    # print(model)

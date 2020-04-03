@@ -380,10 +380,12 @@ class NoteSequence:
             current_time = marker.time
 
         if clean:
+            # A list containing the index of the items to remove.
+            remove_queue = []
             for i in range(len(events) - 1, -1, -1):
                 event = events[i]
                 if event.type == EventType.TIME_SHIFT and event.value == 0:
-                    events.pop(i)
+                    remove_queue.append(i)
 
                 # If the current event is a NOTE_OFF event, check if the one preceeding it
                 # was a NOTE_ON event. If it is, we should remove both events since it is
@@ -394,8 +396,12 @@ class NoteSequence:
                 #   in backwards order as well (i.e. NOTE_OFF and then NOTE_ON as opposed
                 #   to the opposite direction; however, that is actually what we are filtering).
                 if event.type == EventType.NOTE_OFF and i - 1 >= 0 and events[i - 1].type == EventType.NOTE_ON:
-                    events.pop(i)
-                    events.pop(i - 1)
+                    remove_queue.append(i)
+                    remove_queue.append(i - 1)
+
+            remove_queue.sort(reverse=True)
+            for i in remove_queue:
+                events.pop(i)
 
         return EventSequence(events, time_step_increment, max_time_steps, velocity_bins)
 

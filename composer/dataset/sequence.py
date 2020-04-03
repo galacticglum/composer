@@ -218,6 +218,18 @@ class NoteSequence:
             sustain_period.start *= percent
             sustain_period.end *= percent
 
+    def pitch_shift(self, offset):
+        '''
+        Shifts the pitch of all notes in this :class:`NoteSequence` by a specified offset.
+
+        :param offset:
+            The amount to shift the pithc of each note.
+
+        '''
+
+        for note in self.notes:
+            note.pitch += offset
+
     def to_event_sequence(self, time_step_increment=10, max_time_steps=100, velocity_bins=32,
                           sustain_period_encode_mode=SustainPeriodEncodeMode.EVENTS, clean=True):
         '''

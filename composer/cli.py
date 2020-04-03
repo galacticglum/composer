@@ -3,8 +3,11 @@ The command-line interface for Composer.
 
 '''
 
+import time
+import json
 import click
 import logging
+import datetime
 import numpy as np
 import composer.config
 import composer.logging_utils as logging_utils
@@ -28,7 +31,7 @@ def _set_verbosity_level(logger, value):
         
 @click.group()
 @click.option('--verbosity', '-v', default='INFO', help='Either CRITICAL, ERROR, WARNING, INFO, or DEBUG.')
-@click.option('--seed', default=None, help='Sets the seed of the random engine.')
+@click.option('--seed', type=int, help='Sets the seed of the random engine.')
 @click.pass_context
 def cli(ctx, verbosity, seed):
     '''
@@ -36,11 +39,16 @@ def cli(ctx, verbosity, seed):
 
     '''
 
-    np.random.seed(seed)
+    if seed is None:
+        # We use the current time as the seed rather than letting numpy seed
+        # since we want to achieve consistent results across sessions.
+        # Source: https://stackoverflow.com/a/45573061/7614083
+        t = int(time.time() * 1000.0)
+        seed = ((t & 0xff000000) >> 24) + ((t & 0x00ff0000) >> 8) + ((t & 0x0000ff00) <<  8) + ((t & 0x000000ff) << 24)
 
     logging_utils.init()
     _set_verbosity_level(logging.getLogger(), verbosity)
-    
+
 @cli.command()
 @click.argument('dataset-path')
 @click.argument('output_directory')
@@ -52,7 +60,8 @@ def cli(ctx, verbosity, seed):
 @click.option('--transform-percent', default=0.50, help='The percentage of the dataset that should be transformed. Defaults to 50%% of the dataset.')
 @click.option('--split/--no-split', default=True, help='Indicates whether the dataset should be split into train and test sets. Defaults to True.')
 @click.option('--test-percent', default=0.30, help='The percentage of the dataset that is allocated to testing. Defaults to 30%%')
-def preprocess(dataset_path, output_directory, num_workers, transform, transform_percent, split, test_percent):
+@click.option('--metadata/--no-metadata', 'output_metadata', default=True, help='Indicates whether to output metadata. Defaults to True.')
+def preprocess(dataset_path, output_directory, num_workers, transform, transform_percent, split, test_percent, output_metadata):
     '''
     Preprocesses a raw dataset so that it can be used by the models.
 
@@ -64,6 +73,22 @@ def preprocess(dataset_path, output_directory, num_workers, transform, transform
         composer.dataset.preprocess.split_dataset(dataset_path, output_directory, test_percent, transform, transform_percent, num_workers)
     else:
         composer.dataset.preprocess.convert_all(dataset_path, output_directory, num_workers)
+
+    if not output_metadata: return
+    with open(output_directory / 'metadata.json', 'w+') as metadata_file:
+        # The metadata file is more or less a dump of the settings used to preprocess the dataset.
+        metadata = {
+            'local_time': str(datetime.datetime.now()),
+            'utc_time': str(datetime.datetime.utcnow()),
+            'raw_dataset_path': dataset_path,
+            'transform': transform,
+            'transform_percent': transform_percent,
+            'split': split,
+            'test_percent': test_percent,
+            'seed': np.random.get_state()[1][0]
+        }
+
+        json.dump(metadata, metadata_file)
 
 @unique
 class ModelType(Enum):

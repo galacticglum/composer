@@ -42,7 +42,7 @@ def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.9
 
     if transform:
         # Convenience functions for calculating pitch shift and time stretch 
-       _get_pitch_shift = lambda: np.random.randint(*pitch_shift_range)
+        _get_pitch_shift = lambda: np.random.randint(*pitch_shift_range)
         _get_time_stretch = lambda: np.random.uniform(*time_stretch_range)
 
         transformed_note_sequences = [

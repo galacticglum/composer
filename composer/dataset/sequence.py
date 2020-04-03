@@ -219,7 +219,7 @@ class NoteSequence:
             sustain_period.end *= percent
 
     def to_event_sequence(self, time_step_increment=10, max_time_steps=100, velocity_bins=32,
-                          sustain_period_encode_mode=SustainPeriodEncodeMode.EVENTS):
+                          sustain_period_encode_mode=SustainPeriodEncodeMode.EVENTS, clean=True):
         '''
         Computes the event-based representation of this :class:`NoteSequence`. 
 
@@ -243,6 +243,9 @@ class NoteSequence:
             * If set to :var:`NoteSequence.SustainPeriodEncodeMode.EXTEND`, notes within sustain periods will be extended
               until the end of the period or to the start of the next note of the same pitch, whichever comes first.
             * If set to :var:`NoteSequence.SustainPeriodEncodeMode.EVENTS`, sustain periods will be encoded as events.
+        :param clean:
+            Indicates whether the event sequence should be cleaned up after conversion. This will remove undesirable events
+            such as time shifts with value equal to zero or note on events followed directly by note off events.
         :returns:
             A list of :class:`Event` objects.
 
@@ -375,6 +378,24 @@ class NoteSequence:
                 events.append(Event(marker.get_event_type(), None))
 
             current_time = marker.time
+
+        if clean:
+            for i in range(len(events) - 1, -1, -1):
+                event = events[i]
+                if event.type == EventType.TIME_SHIFT and event.value == 0:
+                    events.pop(i)
+
+                # If the current event is a NOTE_OFF event, check if the one preceeding it
+                # was a NOTE_ON event. If it is, we should remove both events since it is
+                # useless to turn on a note just to turn it off right after.
+                # 
+                # Remember:
+                #   Since we are iterating over the list BACKWARDS, we are checking this
+                #   in backwards order as well (i.e. NOTE_OFF and then NOTE_ON as opposed
+                #   to the opposite direction; however, that is actually what we are filtering).
+                if event.type == EventType.NOTE_OFF and i - 1 >= 0 and events[i - 1].type == EventType.NOTE_ON:
+                    events.pop(i)
+                    events.pop(i - 1)
 
         return EventSequence(events, time_step_increment, max_time_steps, velocity_bins)
 

@@ -437,8 +437,13 @@ class NoteSequence:
                 #   in backwards order as well (i.e. NOTE_OFF and then NOTE_ON as opposed
                 #   to the opposite direction; however, that is actually what we are filtering).
                 if event.type == EventType.NOTE_OFF and i - 1 >= 0 and events[i - 1].type == EventType.NOTE_ON:
-                    remove_queue.append(i)
-                    remove_queue.append(i - 1)
+                    # Make sure the notes are of the same pitch!
+                    # It's perfectly okay (and normal!) for there to be a NOTE_ON and NOTE_OFF directly after one another
+                    # so long as these events are referencing different notes. It is only a problem when we are turning
+                    # off a note with the same pitch directly after turning it on...
+                    if event.value == events[i - 1].value:
+                        remove_queue.append(i)
+                        remove_queue.append(i - 1)
 
             remove_queue.sort(reverse=True)
             for i in remove_queue:

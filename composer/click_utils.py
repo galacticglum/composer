@@ -16,6 +16,7 @@ class EnumType(click.Choice):
     def __init__(self, enum, casesensitive=True):
         '''
         Initializes an instance of :class:`EnumType`.
+        
         '''
 
         if isinstance(enum, tuple):

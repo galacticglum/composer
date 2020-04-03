@@ -80,15 +80,16 @@ def preprocess(dataset_path, output_directory, num_workers, transform, transform
         metadata = {
             'local_time': str(datetime.datetime.now()),
             'utc_time': str(datetime.datetime.utcnow()),
-            'raw_dataset_path': dataset_path,
+            'raw_dataset_path': str(Path(dataset_path).absolute()),
+            'output_directory': str(output_directory.absolute()),
             'transform': transform,
             'transform_percent': transform_percent,
             'split': split,
             'test_percent': test_percent,
-            'seed': np.random.get_state()[1][0]
+            'seed': int(np.random.get_state()[1][0])
         }
 
-        json.dump(metadata, metadata_file)
+        json.dump(metadata, metadata_file, indent=True)
 
 @unique
 class ModelType(Enum):

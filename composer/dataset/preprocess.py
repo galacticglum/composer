@@ -33,7 +33,7 @@ def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.9
     filename = Path(filepath).stem
     file_id = hashlib.md5(str(filepath).encode()).hexdigest()
     file_save_path = output_path / '{}_{}.data'.format(filename, file_id)
-    
+
     # Load the MIDI file into a NoteSequence and convert it into an EventSequence.
     note_sequence = NoteSequence.from_midi(filepath)
     event_sequence = note_sequence.to_event_sequence()
@@ -162,4 +162,3 @@ def split_dataset(dataset_path, root_outpath_directory, test_percent, transform,
     kwargs_train_set = [{'filepath': file, 'output_path': train_outpath_path, 'transform': train_files_transform[file]} for file in train_files]
     parallel_process(kwargs_train_set, convert_file, use_kwargs=True)
     parallel_process([{'filepath': file, 'output_path': test_output_path} for file in test_files], convert_file, use_kwargs=True)
-

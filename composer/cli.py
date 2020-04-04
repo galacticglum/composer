@@ -182,7 +182,8 @@ _MUSIC_RNN_DEFAULT_CONFIG = Path(__file__).parent / 'music_rnn_config.yml'
 @click.argument('dataset-path')
 @click.option('-c', '--config', 'config_filepath', default=None, 
               help='The path to the model configuration file. If unspecified, uses the default config for the model.')
-def train(model_type, dataset_path, config_filepath):
+@click.option('-e', '--epochs', 'epochs', default=10, help='The number of epochs to train for. Defaults to 10.')
+def train(model_type, dataset_path, config_filepath, epochs):
     '''
     Trains the specified model.
 
@@ -193,8 +194,18 @@ def train(model_type, dataset_path, config_filepath):
 
     config = composer.config.get(config_filepath)
     train_dataset, test_dataset = model_type.get_train_test_set(dataset_path, config)
-    for batch in train_dataset.take(2):
-        print([arr.shape for arr in batch])
-    # model = model_type.create_model(config)
 
-    # print(model)
+    # The event dimensions is the size of a single one-hot vector. We can use the loaded dataset and simply grab its shape.
+    # The train dataset returns X and Y. The X is the input which shape (batch_size, time_steps, sequence_size),
+    # where sequence_size is the size of a single input sequence (i.e. the size of the one-hot vector).
+    # event_dimensions = train_dataset.take(1).shape[-1]
+    # 
+    # Since train_dataset.take(1) returns a TakeDataset object, we need to first convert it to an iterator.
+    # Using the as_numpy_iterator method, we have a generator object that contains the first and second outputs
+    # of the train_dataset generator method (these are the inputs and outputs). Using the next method, we get
+    # the NEXT element in the iterator, which happens to be input, and finally we get its shape.
+    event_dimensions = next(train_dataset.take(1).as_numpy_iterator())[0].shape[-1]
+    model = model_type.create_model(config, event_dimensions=event_dimensions)
+    
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    model.fit(train_dataset.shuffle(config.train.shuffle_buffer_size, reshuffle_each_iteration=True), epochs=epochs)

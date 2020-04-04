@@ -899,16 +899,27 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
         self.time_step_increment = time_step_increment
         self.vectors = vectors if vectors is not None else list()
 
+    @property
+    def one_hot_size(self):
+        '''
+        Gets the size of the one-hot vector that is needed to encode 
+        an :class:`Event` with the specified event ranges.
+
+        '''
+
+        return OneHotEncodedEventSequence.get_one_hot_size(self.event_ranges)
+
     @staticmethod
     def get_one_hot_size(event_ranges):
         '''
-        Gets the size of the one-hot vector that is needed to encode an :class:`Event`
-        with the specified event ranges.
+        Gets the size of the one-hot vector that is needed to encode 
+        an :class:`Event` with the specified event ranges.
 
         :param event_ranges:
             The range of each event type in the one-hot encoded vector.
 
         '''
+
         return event_ranges[next(reversed(event_ranges))].stop
 
     @staticmethod
@@ -1001,8 +1012,7 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
                 self.time_step_increment
             ))
 
-            one_hot_size = OneHotEncodedEventSequence.get_one_hot_size(self.event_ranges)
-            one_hot_vector_format = OneHotEncodedEventSequence._get_one_hot_vector_format(one_hot_size)
+            one_hot_vector_format = OneHotEncodedEventSequence._get_one_hot_vector_format(self.one_hot_size)
             for vector in self.vectors:
                 file.write(struct.pack(one_hot_vector_format, *vector))
 

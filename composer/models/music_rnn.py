@@ -86,7 +86,7 @@ class MusicRNN(Model):
             # input sequence. In our case, since the input is a one-hot vector, a single input sequence is the size of
             # this vector. Time steps is the number of one-hot vectors that we are passing in.
             lstm_layer = layers.LSTM(lstm_layer_sizes[i], input_shape=(window_size, event_dimensions), 
-                                     return_sequences=i < lstm_layer_sizes - 1)
+                                     return_sequences=i < lstm_layers_count - 1)
 
             dropout_layer = layers.Dropout(lstm_dropout_probability[i])
 
@@ -164,12 +164,17 @@ def create_music_rnn_dataset(filepaths, batch_size, window_size):
 
                     # Split the vectors into inputs (x) and outputs (y)
                     x, y = np.asarray(vectors[:-1]), np.asarray(vectors[-1])
+
                     yield x, y
 
     # Create the tensorflow dataset object
     filepaths = [str(path) for path in filepaths]
+    
+    # Load an event sequence to get the one-hot vector size.
+    one_hot_vector_size = EventSequence.from_file(filepaths[0]).to_one_hot_encoding().one_hot_size
     return tf.data.Dataset.from_generator(
         _generator,
-        output_types=(tf.int8, tf.int8),
+        output_types=(tf.float32, tf.float32),
+        output_shapes=((window_size, one_hot_vector_size), (one_hot_vector_size,)),
         args=(filepaths, window_size)
-    ).batch(batch_size)
+    ).prefetch(tf.data.experimental.AUTOTUNE).batch(batch_size)

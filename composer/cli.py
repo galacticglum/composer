@@ -180,10 +180,11 @@ _MUSIC_RNN_DEFAULT_CONFIG = Path(__file__).parent / 'music_rnn_config.yml'
 @cli.command()
 @click.argument('model-type', type=EnumType(ModelType, False))
 @click.argument('dataset-path')
+@click.option('--logdir', default='./output/logdir/', help='The root log directory. Defaults to \'./output/logdir\'.')
 @click.option('-c', '--config', 'config_filepath', default=None, 
               help='The path to the model configuration file. If unspecified, uses the default config for the model.')
 @click.option('-e', '--epochs', 'epochs', default=10, help='The number of epochs to train for. Defaults to 10.')
-def train(model_type, dataset_path, config_filepath, epochs):
+def train(model_type, dataset_path, logdir, config_filepath, epochs):
     '''
     Trains the specified model.
 
@@ -207,5 +208,17 @@ def train(model_type, dataset_path, config_filepath, epochs):
     event_dimensions = next(train_dataset.take(1).as_numpy_iterator())[0].shape[-1]
     model = model_type.create_model(config, event_dimensions=event_dimensions)
     
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-    model.fit(train_dataset.shuffle(config.train.shuffle_buffer_size, reshuffle_each_iteration=True), epochs=epochs)
+    from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
+    from tensorflow.keras import optimizers
+
+    model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+    model_checkpoint_path = model_logdir / 'model-{epoch:02d}'
+
+    tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq='batch', profile_batch=0, write_graph=True, write_images=True)
+    model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='val_loss', 
+                                                verbose=1, save_best_only=False, mode='auto')
+
+    optimizer = optimizers.Adam(learning_rate=config.train.learning_rate, decay=config.train.decay)
+    model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+    training_history = model.fit(train_dataset.shuffle(config.train.shuffle_buffer_size, reshuffle_each_iteration=True),
+                                 epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])

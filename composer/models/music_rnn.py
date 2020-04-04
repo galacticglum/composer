@@ -121,7 +121,7 @@ class MusicRNN(Model):
             if self.normalization_layers is not None:
                 inputs = self.normalization_layers[i](inputs)
 
-        inputs = self.dense_layer(inputs)
+        # inputs = self.dense_layer(inputs)
         inputs = self.output_layer(inputs)
 
         return inputs

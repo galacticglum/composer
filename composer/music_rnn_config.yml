@@ -12,5 +12,6 @@ model:
     use_batch_normalization: true
 train:
     batch_size: 64
-    learning_rate: 0.001
     shuffle_buffer_size: 64
+    learning_rate: 0.001
+    decay: 0.000001

@@ -129,7 +129,7 @@ class ObjectPool:
 
             self.warm(self.warm_stride_size)
         
-        return self.get()
+        return self.objects.get()
 
     def free(self, object_to_free):
         '''

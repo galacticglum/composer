@@ -242,11 +242,11 @@ class NoteSequence:
         notes = _copy_func(self.notes)
         sustain_periods = _copy_func(self.sustain_periods)
 
-        for note in self.notes:
+        for note in notes:
             note.start *= percent
             note.end *= percent
 
-        for sustain_period in self.sustain_periods:
+        for sustain_period in sustain_periods:
             sustain_period.start *= percent
             sustain_period.end *= percent
 

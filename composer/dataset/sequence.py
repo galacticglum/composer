@@ -66,6 +66,23 @@ class EventType(IntEnum):
         SUSTAIN_ON = 5
         SUSTAIN_OFF = 6
 
+        @staticmethod
+        def make_int_type_map():
+            '''
+            Creates a ``dict`` that maps the integer values to their ``EventType`` objects.
+
+            '''
+
+            mapping = {}
+            enum_values = list(EventType)
+            for enum_value in enum_values:
+                mapping[enum_value.value] = enum_value
+
+            return mapping
+
+# A handle dictionary that maps integers to their event type objects.
+_EVENT_TYPE_MAPPINGS = EventType.make_int_type_map()
+
 class Event:
     '''
     An event representing some change on the NoteSequence.
@@ -755,8 +772,7 @@ class EventSequence:
                 raise InvalidEncodingTypeError('Cannot load \'{}\' as an EventSequence! \'{}\' is not a valid encoding type id.' \
                                                 .format(filepath, encoding_type_id))
         
-        result =  _ENCODING_TYPE_MAP[encoding_type_id].from_file(filepath)
-        return result.decode() if decode else result
+        return _ENCODING_TYPE_MAP[encoding_type_id].from_file(filepath, decode=decode)
 
     def __repr__(self):
         return '\n'.join(str(event) for event in self.events)
@@ -807,14 +823,18 @@ class EncodedEventSequence(abc.ABC):
         pass
 
     @abc.abstractstaticmethod
-    def from_file(filepath):
+    def from_file(filepath, decode=False):
         '''
         Loads a :class:`EncodedEventSequence` from the specified filepath.
 
         :param filepath:
             The source of the encoded sequence.
+        :param decode:
+            Indicates whether the file should be decoded into an :class:`EventSequence`.
+            Defaults to ``False``.
         :returns:
-            An instance of :class:`EncodedEventSequence`.
+            An instance of :class:`EventSequence` if ``decode`` is ``True``;
+            othwerwise, an instance of :class:`EncodedEventSequence`.
 
         '''
 
@@ -1039,7 +1059,7 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
         return '?' * one_hot_vector_size
 
     @staticmethod
-    def from_file(filepath):
+    def from_file(filepath, decode=False):
         '''
         Loads a :class:`OneHotEncodedEventSequence` from the specified filepath.
 
@@ -1066,7 +1086,7 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
             event_range_size = struct.calcsize(OneHotEncodedEventSequence._EVENT_RANGE_FORMAT)
             for i in range(event_ranges_len):
                 event_type, start, stop = struct.unpack(OneHotEncodedEventSequence._EVENT_RANGE_FORMAT, file.read(event_range_size))
-                event_ranges[EventType(event_type)] = range(start, stop)
+                event_ranges[_EVENT_TYPE_MAPPINGS[event_type]] = range(start, stop)
 
             header_size += integer_size + event_range_size * event_ranges_len     
 
@@ -1082,7 +1102,7 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
                 if start != -1 and stop != -1:
                     value_range = range(start, stop)
 
-                event_value_ranges[EventType(event_type)] = value_range
+                event_value_ranges[_EVENT_TYPE_MAPPINGS[event_type]] = value_range
 
             header_size += integer_size + event_value_range_size * event_value_ranges_len
 
@@ -1099,12 +1119,26 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
             # The size, in bytes, of the one-hot vector.
             one_hot_vector_size = struct.calcsize(one_hot_vector_format)
             
-            vectors = []
+            events = []
             for i in range(buffer_length // one_hot_vector_size):
                 vector = struct.unpack(one_hot_vector_format, file.read(one_hot_vector_size))
-                vectors.append(list(map(int, vector)))
+                if decode:
+                    events.append(OneHotEncodedEventSequence.one_hot_vector_as_event(vector, event_ranges, event_value_ranges))
+                else:
+                    events.append(list(map(int, vector)))
 
-            return OneHotEncodedEventSequence(time_step_increment, event_ranges, event_value_ranges, vectors)
+            if decode:
+                # The max time steps value is the largest time step value that
+                # the time shift event accepts. Therefore, we can use this range
+                # to find the max_time_steps value.
+                max_time_steps = event_value_ranges[EventType.TIME_SHIFT].stop
+
+                # The velocity event value ranges from 0 to the velocity bin count.
+                # Thus, we can use this range to find the velocity_bins value.
+                velocity_bins = event_value_ranges[EventType.VELOCITY].stop
+                return EventSequence(events, time_step_increment, max_time_steps, velocity_bins)
+            else:
+                return OneHotEncodedEventSequence(time_step_increment, event_ranges, event_value_ranges, events)
 
     def get_encoding_type():
         '''
@@ -1120,6 +1154,57 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
 
         return 9223372036854775806
 
+    @staticmethod
+    def event_as_one_hot_vector(event, event_ranges, event_value_ranges):
+        '''
+        Converts an :class:`Event` to a one-hot vector.
+
+        :param event:
+            The :class:`Event` to convert.
+        :param event_ranges:
+            The range of each event type in the one-hot encoded vector.
+        :param event_value_ranges:
+            The range of values for each :class:`EventType`.
+        :returns:
+            A list of integers (consisting of either 0 or 1) representing
+            the event as a one-hot vector.
+
+        '''
+
+        vector = [0] * OneHotEncodedEventSequence.get_one_hot_size(event_ranges)
+        index_offset = 0
+        if event.value is not None:
+            index_offset = event.value - event_value_ranges[event.type].start
+        
+        vector[event_ranges[event.type].start + index_offset] = 1
+        return vector
+
+    @staticmethod
+    def one_hot_vector_as_event(vector, event_ranges, event_value_ranges):
+        '''
+        Converts a one-hot vector to an :class:`Event`
+
+        :param vector:
+            An array-like object of integers (consisting of either 0 or 1)
+            representing the event as a one-hot vector.
+        :param event_ranges:
+            The range of each event type in the one-hot encoded vector.
+        :param event_value_ranges:
+            The range of values for each :class:`EventType`.
+        :returns:
+            An instance of :class:`Event`.
+
+        '''
+
+        hot_index = vector.index(1)
+        for event_type, event_range in event_ranges.items():
+            if hot_index in event_range: break
+
+        value = None
+        if event_value_ranges[event_type] is not None:
+            value = hot_index - event_range.start + event_value_ranges[event_type].start
+
+        return Event(event_type, value)
 
 class IntegerEncodedEventSequence(EncodedEventSequence):
     '''
@@ -1190,7 +1275,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
         events = []
         for encoded_event in self.events:
             event_type, value = encoded_event
-            events.append(Event(EventType(event_type), Event.decode_value(value)))
+            events.append(Event(_EVENT_TYPE_MAPPINGS[event_type], Event.decode_value(value)))
 
         return EventSequence(events, self.time_step_increment, self.max_time_steps, self.velocity_bins)
 
@@ -1223,14 +1308,18 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             file.write(encoded_sequence)
 
     @staticmethod
-    def from_file(filepath):
+    def from_file(filepath, decode=False):
         '''
         Loads a :class:`IntegerEncodedEventSequence` from the specified filepath.
 
         :param filepath:
             The source of the encoded sequence.
+        :param decode:
+            Indicates whether the file should be decoded into an :class:`EventSequence`.
+            Defaults to ``False``.
         :returns:
-            An instance of :class:`IntegerEncodedEventSequence`.
+            An instance of :class:`EventSequence` if ``decode`` is ``True``;
+            othwerwise, an instance of :class:`IntegerEncodedEventSequence`.
 
         '''
 
@@ -1253,9 +1342,15 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             events = []
             for i in range(buffer_length // event_size):
                 event_type, value = struct.unpack(IntegerEncodedEventSequence._EVENT_FORMAT, file.read(event_size))
-                events.append((event_type, value))
+                if decode:
+                    events.append(Event(_EVENT_TYPE_MAPPINGS[event_type], Event.decode_value(value)))
+                else:
+                    events.append((event_type, value))
 
-            return IntegerEncodedEventSequence(time_step_increment, max_time_steps, velocity_bins, events)
+            if decode:
+                return EventSequence(events, time_step_increment, max_time_steps, velocity_bins)
+            else:
+                return IntegerEncodedEventSequence(time_step_increment, max_time_steps, velocity_bins, events)
 
     def get_encoding_type():
         '''

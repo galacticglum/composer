@@ -205,20 +205,20 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs):
     # Using the as_numpy_iterator method, we have a generator object that contains the first and second outputs
     # of the train_dataset generator method (these are the inputs and outputs). Using the next method, we get
     # the NEXT element in the iterator, which happens to be input, and finally we get its shape.
-    event_dimensions = next(train_dataset.take(1).as_numpy_iterator())[0].shape[-1]
-    model = model_type.create_model(config, event_dimensions=event_dimensions)
+
+    # event_dimensions = next(train_dataset.take(1).as_numpy_iterator())[0].shape[-1]
+    # # model = model_type.create_model(config, event_dimensions=event_dimensions)
     
-    from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
-    from tensorflow.keras import optimizers
+    # # from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
+    # # from tensorflow.keras import optimizers
 
-    model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
-    model_checkpoint_path = model_logdir / 'model-{epoch:02d}'
+    # # model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+    # # model_checkpoint_path = model_logdir / 'model-{epoch:02d}'
 
-    tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq=25, profile_batch=0, write_graph=True, write_images=True)
-    model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='val_loss', 
-                                                verbose=1, save_best_only=False, mode='auto')
+    # # tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq=25, profile_batch=0, write_graph=False, write_images=False)
+    # # model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='val_loss', 
+    # #                                             verbose=1, save_best_only=True, mode='auto')
 
-    optimizer = optimizers.Adam(learning_rate=config.train.learning_rate, decay=config.train.decay)
-    model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-    training_history = model.fit(train_dataset.shuffle(config.train.shuffle_buffer_size, reshuffle_each_iteration=True),
-                                 epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])
+    # # optimizer = optimizers.Adam(learning_rate=config.train.learning_rate)
+    # # model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+    # # training_history = model.fit(train_dataset, epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])

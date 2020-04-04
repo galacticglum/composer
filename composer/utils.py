@@ -6,6 +6,7 @@ Utility methods.
 import logging
 from tqdm import tqdm
 from queue import Queue
+from collections import deque
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
 def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3, multithread=False):
@@ -40,6 +41,7 @@ def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3, 
 
     '''
     # We run the first few iterations serially to catch bugs
+    front = []
     if front_num > 0:
         front = [function(**a) if use_kwargs else function(a) for a in array[:front_num]]
 

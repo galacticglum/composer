@@ -10,9 +10,12 @@ import struct
 import itertools
 import collections
 import numpy as np
-from enum import Enum, IntEnum
+
 from pathlib import Path
+from enum import Enum, IntEnum
 from pretty_midi import PrettyMIDI, Instrument, Note as MIDINote, ControlChange
+
+from composer.utils import ObjectPool
 from composer.exceptions import InvalidParameterError
 
 class Note:
@@ -604,6 +607,36 @@ class EventSequence:
 
         return IntegerEncodedEventSequence.encode(self)
 
+    @staticmethod
+    def _compute_event_value_ranges(time_step_increment, max_time_steps, velocity_bins):
+        '''
+        Calculuates the event value ranges
+
+        '''
+
+        value_ranges = collections.OrderedDict()
+
+        # NOTE_ON and NOTE_OFF take a MIDI pitch value which ranges from 0 to 127.
+        value_ranges[EventType.NOTE_ON] = range(0, 128)
+        value_ranges[EventType.NOTE_OFF] = range(0, 128)
+
+        # VELOCITY takes a MIDI velocity which ranges from 0 to the number of velocity bins - 1.
+        # This is because velocity bins are zero-indexed.
+        value_ranges[EventType.VELOCITY] = range(0, velocity_bins)
+        
+        max_time_steps = max_time_steps
+
+        # Time shift doesn't accept zero since it is useless to do a time shift by no time steps.
+        value_ranges[EventType.TIME_SHIFT] = range(1, max_time_steps + 1)
+
+        # SUSTAIN events simply marker the start/end of a period.
+        # They have no parameters...
+        value_ranges[EventType.SUSTAIN_ON] = None
+        value_ranges[EventType.SUSTAIN_OFF] = None
+
+        return value_ranges
+
+    @property
     def event_value_ranges(self):
         '''
         Gets the range of values for each :class:`EventType`.
@@ -616,31 +649,33 @@ class EventSequence:
 
         '''
 
-        value_ranges = collections.OrderedDict()
-
-        # NOTE_ON and NOTE_OFF take a MIDI pitch value which ranges from 0 to 127.
-        value_ranges[EventType.NOTE_ON] = range(0, 128)
-        value_ranges[EventType.NOTE_OFF] = range(0, 128)
-
-        # VELOCITY takes a MIDI velocity which ranges from 0 to the number of velocity bins - 1.
-        # This is because velocity bins are zero-indexed.
-        value_ranges[EventType.VELOCITY] = range(0, self.velocity_bins)
-        
-        # If no max time step value is given (i.e. it is None), we just get the largest
-        # time shift value in the event sequence.
+        # If no max time step value is given (i.e. it is None), we just get the largest time shift value in the event sequence.
         max_time_steps = self.max_time_steps if self.max_time_steps is not None else \
             max(event.value for event in self.events if event.type == EventType.TIME_SHIFT)
 
-        # Time shift doesn't accept zero since it is useless to do a time shift by no time steps.
-        value_ranges[EventType.TIME_SHIFT] = range(1, max_time_steps + 1)
+        return EventSequence._compute_event_value_ranges(
+            self.time_step_increment,
+            max_time_steps,
+            self.velocity_bins
+        )
 
-        # SUSTAIN events simply marker the start/end of a period.
-        # They have no parameters...
-        value_ranges[EventType.SUSTAIN_ON] = None
-        value_ranges[EventType.SUSTAIN_OFF] = None
+    @staticmethod
+    def _compute_event_dimensions(event_value_ranges):
+        '''
+        Computes the event dimensions.
 
-        return value_ranges
+        '''
 
+        dimensions = collections.OrderedDict()
+        for event_type, value_range in event_value_ranges.items():
+            if value_range is None:
+                value_range = range(0, 0)
+            
+            dimensions[event_type] = value_range.stop - value_range.start
+
+        return dimensions
+
+    @property
     def event_dimensions(self):
         '''
         Gets the dimension of each :class:`EventType`.
@@ -655,17 +690,30 @@ class EventSequence:
             
         '''
 
-        value_ranges = self.event_value_ranges()
-        dimensions = collections.OrderedDict()
+        return EventSequence._compute_event_dimensions(self.event_value_ranges)
 
-        for event_type, value_range in self.event_value_ranges().items():
-            if value_range is None:
-                value_range = range(0, 0)
-            
-            dimensions[event_type] = value_range.stop - value_range.start
+    @staticmethod
+    def _compute_event_ranges(event_dimensions):
+        '''
+        Computes event ranges.
 
-        return dimensions
+        '''
 
+        offset = 0
+        ranges = collections.OrderedDict()
+        for event_type, dimension in event_dimensions.items():
+            # If the dimension is zero, this means that the event has no parameter values.
+            # Therefore, the event merely acts a boolean: it is either on or off.
+            # However, we still require one element to encode this state.
+            if dimension == 0:
+                dimension += 1
+
+            ranges[event_type] = range(offset, offset + dimension)
+            offset += dimension
+        
+        return ranges
+
+    @property
     def event_ranges(self):
         '''
         Gets the range of each event type in the one-hot encoded vector.
@@ -684,19 +732,7 @@ class EventSequence:
 
         '''
 
-        offset = 0
-        ranges = collections.OrderedDict()
-        for event_type, dimension in self.event_dimensions().items():
-            # If the dimension is zero, this means that the event has no parameter values.
-            # Therefore, the event merely acts a boolean: it is either on or off.
-            # However, we still require one element to encode this state.
-            if dimension == 0:
-                dimension += 1
-
-            ranges[event_type] = range(offset, offset + dimension)
-            offset += dimension
-        
-        return ranges
+        return self._compute_event_ranges(self.event_dimensions)
 
     def to_note_sequence(self):
         '''
@@ -783,7 +819,7 @@ class EncodedEventSequence(abc.ABC):
 
     '''
 
-    # The format of the encoding type ID (unsigned long long)
+    # The format of the encoding type id (unsigned long long)
     _ENCODING_TYPE_ID_FORMAT = 'Q'
 
     @abc.abstractstaticmethod
@@ -846,7 +882,7 @@ class EncodedEventSequence(abc.ABC):
         Gets the unique identifier for this type of :class:`EncodedEventSequence`.
 
         :note:
-            The encoding type ID is the first integer in all serialized :class:`EncodedEventSequence`.
+            The encoding type id is the first integer in all serialized :class:`EncodedEventSequence`.
             It allows the decoder to infer the encoding type at runtime without having to read the format.
 
         :returns:
@@ -857,7 +893,7 @@ class EncodedEventSequence(abc.ABC):
 
 def _load_encoding_type_id(file):
     '''
-    Loads an encoding type ID header from specfiied file object.
+    Loads an encoding type id header from specfiied file object.
     
     :param file:
         A file-like object.
@@ -954,12 +990,12 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
 
         '''
 
-        event_ranges = event_sequence.event_ranges()
-        len_events = len(event_sequence.events)
+        event_ranges = event_sequence.event_ranges
         one_hot_size = OneHotEncodedEventSequence.get_one_hot_size(event_ranges)
-
+        
+        len_events = len(event_sequence.events)
         vectors = [None] * len_events
-        event_value_ranges = event_sequence.event_value_ranges()
+        event_value_ranges = event_sequence.event_value_ranges
         for i in range(len_events):
             event = event_sequence.events[i]
 
@@ -1145,7 +1181,7 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
         Gets the unique identifier for this type of :class:`OneHotEncodedEventSequence`.
 
         :note:
-            The encoding type ID is the first integer in all serialized :class:`OneHotEncodedEventSequence`.
+            The encoding type id is the first integer in all serialized :class:`OneHotEncodedEventSequence`.
             It allows the decoder to infer the encoding type at runtime without having to read the format.
 
         :returns:
@@ -1307,10 +1343,36 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             
             file.write(encoded_sequence)
 
-    @staticmethod
-    def from_file(filepath, decode=False):
+    @classmethod
+    def _load_file_header(cls, file):
         '''
-        Loads a :class:`IntegerEncodedEventSequence` from the specified filepath.
+        Loads the header of an :class`IntegerEncodedEventSequence` file.
+
+        :param file:
+            A file-like object.
+        :returns:
+            The time step increment, max time steps, velocity bins, and header size (in bytes).
+
+        '''
+
+        # Read the encoding type id
+        encoding_type_id = _load_encoding_type_id(file)
+        if encoding_type_id != cls.get_encoding_type():
+            raise InvalidEncodingTypeError('Cannot decode \'{}\' as IntegerEncodedEventSequence since the ' + 
+                                           'encoding type id header does not match.'.format(filepath))
+
+        header_size = struct.calcsize(cls._HEADER_FORMAT)
+        time_step_increment, max_time_steps, velocity_bins = struct.unpack(cls._HEADER_FORMAT, file.read(header_size))
+        # We have to add this since the header includes the encoding type id; however, we read it seperately so that we can
+        # "short-circuit" the rest of the reading in case that the encoding type id doesn't match.
+        header_size += struct.calcsize(EncodedEventSequence._ENCODING_TYPE_ID_FORMAT)
+
+        return time_step_increment, max_time_steps, velocity_bins, header_size
+
+    @classmethod
+    def from_file(cls, filepath, decode=False):
+        '''
+        Loads an :class:`IntegerEncodedEventSequence` from the specified filepath.
 
         :param filepath:
             The source of the encoded sequence.
@@ -1319,29 +1381,19 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             Defaults to ``False``.
         :returns:
             An instance of :class:`EventSequence` if ``decode`` is ``True``;
-            othwerwise, an instance of :class:`IntegerEncodedEventSequence`.
+            othwerwise, it returns an instance of :class:`IntegerEncodedEventSequence`.
 
         '''
 
         with open(filepath, 'rb') as file:
-            # Read the encoding type id
-            encoding_type_id = _load_encoding_type_id(file)
-            if encoding_type_id != IntegerEncodedEventSequence.get_encoding_type():
-                raise InvalidEncodingTypeError('Cannot decode \'{}\' as IntegerEncodedEventSequence since the ' + 
-                                               'encoding type id header does not match.'.format(filepath))
+            time_step_increment, max_time_steps, velocity_bins, header_size = cls._load_file_header(file)
 
-            header_size = struct.calcsize(IntegerEncodedEventSequence._HEADER_FORMAT)
-            time_step_increment, max_time_steps, velocity_bins = struct.unpack(IntegerEncodedEventSequence._HEADER_FORMAT, file.read(header_size))
-            # We have to add this since the header includes the encoding type id; however, we read it seperately so that we can
-            # "short-circuit" the rest of the reading in case that the encoding type id doesn't match.
-            header_size += struct.calcsize(EncodedEventSequence._ENCODING_TYPE_ID_FORMAT)
-
-            event_size = struct.calcsize(IntegerEncodedEventSequence._EVENT_FORMAT)
+            event_size = struct.calcsize(cls._EVENT_FORMAT)
             buffer_length = Path(filepath).stat().st_size - header_size
 
             events = []
             for i in range(buffer_length // event_size):
-                event_type, value = struct.unpack(IntegerEncodedEventSequence._EVENT_FORMAT, file.read(event_size))
+                event_type, value = struct.unpack(cls._EVENT_FORMAT, file.read(event_size))
                 if decode:
                     events.append(Event(_EVENT_TYPE_MAPPINGS[event_type], Event.decode_value(value)))
                 else:
@@ -1352,12 +1404,90 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             else:
                 return IntegerEncodedEventSequence(time_step_increment, max_time_steps, velocity_bins, events)
 
+    @staticmethod
+    def event_to_id(event_type, event_value, event_ranges):
+        '''
+        Converts an event to an id.
+
+        :param event_type:
+            The :class:`EventType` of the event.
+        :param event_value:
+            The value of the event. Can be ``None``.
+        :param event_ranges:
+            The range of each event type in the one-hot encoded vector.
+        :returns:
+            An integer id representing the event.
+
+        '''
+
+        return event_ranges[event_type].start + (event_value or 0)
+
+    @staticmethod
+    def id_to_event(event_id, event_ranges, event_value_ranges):
+        '''
+        Converts an integer id to an :class:`Event`.
+
+        :param event_id:
+            The integer id of the event.
+        :param event_ranges:
+            A :class:`collections.OrderedDict` representing the range of 
+            each event type in the one-hot encoded vector.
+        :param event_value_ranges:
+            A :class:`collections.OrderedDict` representing the range of 
+            values for each :class:`EventType`.
+        :returns:
+            An instance of :class:`Event`.
+
+        '''
+
+        for event_type, interval in event_ranges.items():
+            if event_id in interval:
+                # An event value range of type None means that the event has no value
+                # (i.e. the value of the event is None itself).
+                value = None if event_value_ranges[event_type] is None else event_id - interval.start
+                return Event(event_type, value)
+
+    @classmethod
+    def event_ids_from_file(cls, filepath):
+        '''
+        Loads an :class:`IntegerEncodedEventSequence` from
+        the specified filepath as single integer event ids.
+
+        :note:
+            These event ids act very similarly to one-hot vectors.
+            They are simply to make data handling more efficient
+            within the network.
+
+        :param filepath:
+            The source of the encoded sequence.
+        :returns:
+            A list of integers representing the event ids, the event value ranges, and the event ranges.
+
+        '''
+        
+        with open(filepath, 'rb') as file:
+            time_step_increment, max_time_steps, velocity_bins, header_size = cls._load_file_header(file)
+
+            event_size = struct.calcsize(cls._EVENT_FORMAT)
+            buffer_length = Path(filepath).stat().st_size - header_size
+
+            # Compute the event ranges (used to create the event ids)
+            event_value_ranges = EventSequence._compute_event_value_ranges(time_step_increment, max_time_steps, velocity_bins)
+            event_ranges = EventSequence._compute_event_ranges(EventSequence._compute_event_dimensions(event_value_ranges))
+
+            event_ids = []
+            for i in range(buffer_length // event_size):
+                event_type, value = struct.unpack(cls._EVENT_FORMAT, file.read(event_size))
+                event_ids.append(cls.event_to_id(_EVENT_TYPE_MAPPINGS[event_type], value, event_ranges))
+
+            return event_ids, event_value_ranges, event_ranges
+
     def get_encoding_type():
         '''
         Gets the unique identifier for this type of :class:`IntegerEncodedEventSequence`.
 
         :note:
-            The encoding type ID is the first integer in all serialized :class:`IntegerEncodedEventSequence`.
+            The encoding type id is the first integer in all serialized :class:`IntegerEncodedEventSequence`.
             It allows the decoder to infer the encoding type at runtime without having to read the format.
 
         :returns:

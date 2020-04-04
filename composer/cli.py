@@ -214,7 +214,7 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs):
     model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
     model_checkpoint_path = model_logdir / 'model-{epoch:02d}'
 
-    tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq='batch', profile_batch=0, write_graph=True, write_images=True)
+    tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq=25, profile_batch=0, write_graph=True, write_images=True)
     model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='val_loss', 
                                                 verbose=1, save_best_only=False, mode='auto')
 

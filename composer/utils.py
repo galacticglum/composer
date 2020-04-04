@@ -3,10 +3,12 @@ Utility methods.
 
 '''
 
+import logging
 from tqdm import tqdm
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from queue import Queue
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
-def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3):
+def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3, multithread=False):
     '''
     A parallel version of the map function with a progress bar. 
 
@@ -29,6 +31,10 @@ def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3):
     :param front_num:
         The number of iterations to run serially before kicking off the
         parallel job. Useful for catching bugs
+    :param multithread:
+        If ``True``, a ``ThreadPoolExecutor`` will be used rather than a ``ProcessPoolExecutor``.
+        Defaults to ``False``.
+
     :returns:
         A list of the form [function(array[0]), function(array[1]), ...].
 
@@ -42,7 +48,8 @@ def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3):
         return front + [function(**a) if use_kwargs else function(a) for a in tqdm(array[front_num:])]
 
     # Assemble the workers
-    with ProcessPoolExecutor(max_workers=n_jobs) as pool:
+    pool_type = ThreadPoolExecutor if multithread else ProcessPoolExecutor
+    with pool_type(max_workers=n_jobs) as pool:
         # Pass the elements of array into function
         if use_kwargs:
             futures = [pool.submit(function, **a) for a in array[front_num:]]
@@ -69,3 +76,80 @@ def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3):
             out.append(e)
 
     return front + out
+
+class ObjectPool:
+    '''
+    Generic object pool manager.
+
+    '''
+
+    def __init__(self, create_func, name=None, warm_stride_size=1):
+        '''
+        Initializes an instance of :class:`ObjectPool`.
+
+        :param create_func:
+            A parameterless function creates the objects stored in the pool.
+        :param warm_stride_size:
+            The number of objects to create when the object pool becomes empty.
+            Defaults to 1.
+
+        '''
+
+        self.name = name
+        self.objects = Queue()
+        self.create_func = create_func
+        self.warm_stride_size = warm_stride_size
+        self.total_objects_allocated = 0
+
+    def warm(self, amount):
+        '''
+        Initializes the specified amount of objects.
+
+        '''
+
+        for i in range(amount):
+            self.objects.put(self.create_func())
+
+        self.total_objects_allocated += amount
+    
+    def get(self, verbose=True):
+        '''
+        Gets an object from the pool.
+
+        :param verbose:
+            Indicates whether this method should log warnings/errors. Defaults to ``True``.
+
+        '''
+
+        if self.objects.empty():
+            if verbose:
+                logging.warn('Exhausted object pool storage (currently allocated {} objects). Creating {} more.'.format(
+                    self.total_objects_allocated, self.warm_stride_size
+                ))
+
+            self.warm(self.warm_stride_size)
+        
+        return self.get()
+
+    def free(self, object_to_free):
+        '''
+        Adds the specified object back to the pool.
+
+        :param object_to_free:
+            The object to add back to the pool.
+
+        '''
+
+        self.objects.put(object_to_free)
+
+    def free_multiple(self, objects):
+        '''
+        Adds the specified objects back to the pool.
+
+        :param objects:
+            An array-like object containing the objects to add back to the pool.
+
+        '''
+
+        for _object in objects:
+            self.free(_object)

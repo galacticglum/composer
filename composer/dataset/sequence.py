@@ -1455,8 +1455,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
 
         :note:
             These event ids act very similarly to one-hot vectors.
-            They are simply to make data handling more efficient
-            within the network.
+            They are simply to make data handling more efficient within the network.
 
         :param filepath:
             The source of the encoded sequence.

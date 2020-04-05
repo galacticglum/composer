@@ -205,4 +205,112 @@ def test_note_sequence_to_event_sequence():
     event_sequence_c = note_sequence_c.to_event_sequence(time_step_increment, max_time_steps, velocity_bins)
     assert _compare_event_sequences(event_sequence_c, target_event_sequence_c)
 
+def test_event_sequence_to_note_sequence():
+    # Constants for conversion.
+    # These don't really need to be varied in testing since they act
+    # almost as a scale on the time shift and velocity events respectively.
+    time_step_increment = 10
+    max_time_steps = 100
+    # Velocity is split into 4 bins: [0, 31], [32, 63], [64, 95], [96-127]
+    velocity_bins = 4
 
+    # Test with notes but no sustain periods
+    event_sequence_a = sequence.EventSequence([
+        # Turn on note with pitch 2 for 2 seconds (200 time steps).
+        sequence.Event(sequence.EventType.VELOCITY, 2),
+        sequence.Event(sequence.EventType.NOTE_ON, 2),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.NOTE_OFF, 2),
+        # Wait for 1 second (100 time steps) before turning on next note.
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        # Turn on note with pitch 1 for 1 second (100 time steps).
+        sequence.Event(sequence.EventType.VELOCITY, 0),
+        sequence.Event(sequence.EventType.NOTE_ON, 1),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.NOTE_OFF, 1)
+    ], time_step_increment, max_time_steps, velocity_bins)
+
+    target_note_sequence_a = sequence.NoteSequence([
+        sequence.Note(0, 2000, 2, 64), # Velocity bin index is 2
+        sequence.Note(3000, 4000, 1, 0) # Velocity bin index is 0
+    ])
+
+    note_sequence_a = event_sequence_a.to_note_sequence()
+    assert _compare_note_sequences(note_sequence_a, target_note_sequence_a)
+
+    # Test with notes and sustain periods
+    event_sequence_b = sequence.EventSequence([
+        # Turn on note with pitch 1 for 4 seconds (400 time steps).
+        # Turn on note with pitch 4 for 4 seconds (400 time steps).
+        sequence.Event(sequence.EventType.VELOCITY, 1),
+        sequence.Event(sequence.EventType.NOTE_ON, 1),
+        sequence.Event(sequence.EventType.NOTE_ON, 4),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        # Sustain period for 1 second (100 time steps).
+        sequence.Event(sequence.EventType.SUSTAIN_ON, None),
+        sequence.Event(sequence.EventType.NOTE_OFF, 1),
+        sequence.Event(sequence.EventType.NOTE_OFF, 4),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.SUSTAIN_OFF, None),
+        # Turn on note with pitch 3 for 6 second (600 time steps).
+        sequence.Event(sequence.EventType.VELOCITY, 3),
+        sequence.Event(sequence.EventType.NOTE_ON, 3),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.NOTE_OFF, 3)
+    ], time_step_increment, max_time_steps, velocity_bins)
+
+    target_note_sequence_b = sequence.NoteSequence([
+        sequence.Note(0, 4000, 1, 32), # Velocity bin index is 1
+        sequence.Note(0, 4000, 4, 32), # Velocity bin index is 1
+        sequence.Note(5000, 11000, 3, 96) # Velocity bin index is 3
+    ], [
+        sequence.SustainPeriod(4000, 5000)
+    ])
+
+    note_sequence_b = event_sequence_b.to_note_sequence()
+    assert _compare_note_sequences(note_sequence_b, target_note_sequence_b)
+
+    # Test with no notes but with sustain periods
+    event_sequence_c = sequence.EventSequence([
+        # Sustain period for 1 second (100 time steps).
+        sequence.Event(sequence.EventType.SUSTAIN_ON, None),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.SUSTAIN_OFF, None),
+        # Wait for 1.5 seconds (150 time steps).
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 50),
+        # Sustain period for 31.7 seconds (317 time steps).
+        sequence.Event(sequence.EventType.SUSTAIN_ON, None),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 17),
+        sequence.Event(sequence.EventType.SUSTAIN_OFF, None),
+        # Wait for 2.33 seconds (233 time steps).
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 33),
+        # Sustain period for 2 seconds (200 time steps).
+        sequence.Event(sequence.EventType.SUSTAIN_ON, None),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.SUSTAIN_OFF, None),
+    ], time_step_increment, max_time_steps, velocity_bins)
+
+    target_note_sequence_c = sequence.NoteSequence(None, [
+        sequence.SustainPeriod(0, 1000),
+        sequence.SustainPeriod(2500, 5670),
+        sequence.SustainPeriod(8000, 10000),
+    ])
+
+    note_sequence_c = event_sequence_c.to_note_sequence()
+    assert _compare_note_sequences(note_sequence_c, target_note_sequence_c)

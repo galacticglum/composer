@@ -185,7 +185,7 @@ _MUSIC_RNN_DEFAULT_CONFIG = Path(__file__).parent / 'music_rnn_config.yml'
 @click.option('-c', '--config', 'config_filepath', default=None, 
               help='The path to the model configuration file. If unspecified, uses the default config for the model.')
 @click.option('-e', '--epochs', 'epochs', default=10, help='The number of epochs to train for. Defaults to 10.')
-def train(model_type, dataset_path, logdir, config_filepath, epochs, validation_split):
+def train(model_type, dataset_path, logdir, config_filepath, epochs):
     '''
     Trains the specified model.
 

@@ -29,11 +29,11 @@ class MusicRNN(Model):
         Initialize an instance of :class:`MusicRNN`.
 
         :param input_event_dimensions:
-            An integer denoting the size of the input event sequence. The network takes in a sequence 
-            of these events and outputs an event denoting the next event in the sequence.
+            An integer denoting the dimensions of a single feature (i.e. the size of an event sequence).
+            The network takes in a sequence of these events and outputs an event denoting the next event in the sequence.
         :param output_event_dimensions:
-            An integer denoting the size of the output event sequence. The network takes in a sequence 
-            of input events and outputs one of these events denoting the next event in the sequence.
+            An integer denoting the dimensions of a single label (i.e. size of the output event sequence).
+            The network takes in a sequence of input events and outputs one of these events denoting the next event in the sequence.
         :param window_size:
             The number of events (input sequences) to use to predict.
         :param lstm_layers_count:
@@ -160,7 +160,9 @@ def create_music_rnn_dataset(filepaths, batch_size, window_size, use_generator=F
         The progress bar will only be displayed if ``use_generator`` is ``False`` (since no dataset loading
         will occur in this function if ``use_generator`` is ``True``).
     :returns:
-        A :class:`tensorflow.data.Dataset` object representing the dataset.
+        A :class:`tensorflow.data.Dataset` object representing the dataset and 
+        a two-dimensional tuple of integers representing the dimensionsof a 
+        single feature and label in the dataset.
 
     '''
 
@@ -254,4 +256,4 @@ def create_music_rnn_dataset(filepaths, batch_size, window_size, use_generator=F
     if use_generator:
         dataset = dataset.prefetch(prefetch_buffer_size)
     
-    return dataset
+    return dataset, (input_event_dimensions, output_event_dimensions)

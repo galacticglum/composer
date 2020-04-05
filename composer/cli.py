@@ -132,39 +132,37 @@ class ModelType(Enum):
 
         return function_map[self]()
     
-    def get_train_test_set(self, dataset_path, config):
+    def get_train_set(self, dataset_path, config):
         '''
-        Loads the training and testing datasets for this :class:`ModelType`
-        using the values in the specified :class:`composer.config.ConfigInstance` object.
+        Loads the training dataset for this :class:`ModelType` using the values 
+        in the specified :class:`composer.config.ConfigInstance` object.
 
         :param dataset_path:
             The path to the preprocessed dataset organized into two subdirectories: train and test.
         :param config:
             A :class:`composer.config.ConfigInstance` containing the configuration values.
         :returns:
-            Two :class:`tensorflow.data.Dataset` objects representing the training and testing
-            datasets respectively. 
+            A :class:`tensorflow.data.Dataset` object representing the training dataset and
+            a two-dimensional tuple of integers representing input and output dimensions
+            of the dataset (i.e. the dimensions of a single feature and label respectively).
         
         '''
 
         dataset_path = Path(dataset_path)
         train_dataset_path = dataset_path / 'train'
-        test_dataset_path = dataset_path / 'test'
-        if not train_dataset_path.exists() or not test_dataset_path.exists():
-            raise DatasetError('Could not get train/test datasets since the specified dataset directory, ' +
-                               '\'{}\', has no train or test folder.'.fromat(dataset_path))
+        if not train_dataset_path.exists():
+            raise DatasetError('Could not get train dataset since the specified dataset directory, ' +
+                               '\'{}\', has no train folder.'.fromat(dataset_path))
 
         # Get all the dataset files in each directory (train and test)
         train_files = list(train_dataset_path.glob('**/*.{}'.format(composer.dataset.preprocess._OUTPUT_EXTENSION)))
-        test_files = list(test_dataset_path.glob('**/*.{}'.format(composer.dataset.preprocess._OUTPUT_EXTENSION)))
 
         # Creates the MusicRNNDataset.
         def _load_music_rnn_dataset():
             from composer.models.music_rnn import create_music_rnn_dataset
-            train_set = create_music_rnn_dataset(train_files, config.train.batch_size, config.model.window_size)
-            test_set = create_music_rnn_dataset(test_files, config.train.batch_size, config.model.window_size)
+            train_set, dimensions = create_music_rnn_dataset(train_files, config.train.batch_size, config.model.window_size)
 
-            return train_set, test_set
+            return train_set, dimensions
 
         # An easy way to map the creation functions to their respective types.
         # This is a lot better than doing something like an if/elif statement.
@@ -194,8 +192,8 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs):
         config_filepath = _MUSIC_RNN_DEFAULT_CONFIG
 
     config = composer.config.get(config_filepath)
-    train_dataset, test_dataset = model_type.get_train_test_set(dataset_path, config)
-
+    train_dataset, dimensions = model_type.get_train_set(dataset_path, config)
+    print(dimensions)
     # The event dimensions is the size of a single one-hot vector. We can use the loaded dataset and simply grab its shape.
     # The train dataset returns X and Y. The X is the input which shape (batch_size, time_steps, sequence_size),
     # where sequence_size is the size of a single input sequence (i.e. the size of the one-hot vector).

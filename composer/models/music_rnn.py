@@ -183,7 +183,8 @@ def create_music_rnn_dataset(filepaths, batch_size, window_size, use_generator=F
 
         '''
 
-        event_ids, event_value_ranges, event_ranges = sequence.IntegerEncodedEventSequence.event_ids_from_file(filepath)
+        event_ids, event_value_ranges, event_ranges, sequence_settings = \
+            sequence.IntegerEncodedEventSequence.event_ids_from_file(filepath)
 
         # The number of events that we can extract from the sample.
         # While every input sequence only contains window_size number of 

@@ -12,3 +12,4 @@ dependencies:
     - tqdm==4.44.1
     - tensorflow-gpu
     - pyyaml==5.3.1
+    - pytest==5.4.1

@@ -237,7 +237,7 @@ def create_music_rnn_dataset(filepaths, batch_size, window_size, use_generator=F
             output_types=(tf.float32, tf.float32),
             output_shapes=((window_size, input_event_dimensions), (output_event_dimensions,)),
             args=(filepaths, window_size)
-        ).shuffle(50 * batch_size)
+        ).shuffle(50 * batch_size, reshuffle_each_iteration=True)
     else:
         _loader_func = lambda filepath: list(_get_sequences_from_file(filepath, window_size))
         logging.info('- Loading dataset (\'{}\') into memory.'.format(filepaths[0].parent))
@@ -251,7 +251,7 @@ def create_music_rnn_dataset(filepaths, batch_size, window_size, use_generator=F
             lambda: [item for sublist in data for item in sublist],
             output_types=(tf.float32, tf.float32),
             output_shapes=((window_size, input_event_dimensions), (output_event_dimensions,))
-        ).shuffle(len(data) * 2)
+        ).shuffle(len(data) * 2, reshuffle_each_iteration=True)
 
     dataset = dataset.batch(batch_size)
     if use_generator:

@@ -198,17 +198,17 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs):
     train_dataset, dimensions = model_type.get_train_set(dataset_path, config)
   
     model = model_type.create_model(config, dimensions)
-    
-    # from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
-    # from tensorflow.keras import optimizers
 
-    # model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
-    # model_checkpoint_path = model_logdir / 'model-{epoch:02d}'
+    from tensorflow.keras import optimizers
+    from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
 
-    # tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq=25, profile_batch=0, write_graph=False, write_images=False)
-    # model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='val_loss', 
-    #                                             verbose=1, save_best_only=True, mode='auto')
+    model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+    model_checkpoint_path = model_logdir / 'model-{epoch:02d}-{val_accuracy:.2f}'
 
-    # optimizer = optimizers.Adam(learning_rate=config.train.learning_rate)
-    # model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-    # training_history = model.fit(train_dataset, epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])
+    tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq=25, profile_batch=0, write_graph=False, write_images=False)
+    model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='val_loss', verbose=1, 
+                                                save_freq=100, save_best_only=False, mode='auto')
+
+    optimizer = optimizers.Adam(learning_rate=config.train.learning_rate)
+    model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+    training_history = model.fit(train_dataset, epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])

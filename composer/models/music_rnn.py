@@ -5,7 +5,7 @@ more information about the event-based sequence description.)
 
 '''
 
-import tqdm
+import logging
 import numpy as np
 import tensorflow as tf
 import composer.dataset.sequence as sequence
@@ -240,6 +240,7 @@ def create_music_rnn_dataset(filepaths, batch_size, window_size, use_generator=F
         ).shuffle(50 * batch_size)
     else:
         _loader_func = lambda filepath: list(_get_sequences_from_file(filepath, window_size))
+        logging.info('- Loading dataset (\'{}\') into memory.'.format(filepaths[0].parent))
         data = parallel_process(filepaths, _loader_func, multithread=True, n_jobs=16,
                                 front_num=0, show_progress_bar=show_loading_progress_bar)
 

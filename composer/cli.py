@@ -185,7 +185,9 @@ _MUSIC_RNN_DEFAULT_CONFIG = Path(__file__).parent / 'music_rnn_config.yml'
 @click.option('-c', '--config', 'config_filepath', default=None, 
               help='The path to the model configuration file. If unspecified, uses the default config for the model.')
 @click.option('-e', '--epochs', 'epochs', default=10, help='The number of epochs to train for. Defaults to 10.')
-def train(model_type, dataset_path, logdir, config_filepath, epochs):
+@click.option('--validation-split', default=0.33, help='The percent of the training data to use for validation. ' + \
+              'Defaults to 0.33 (approximately a third of the total training set).')
+def train(model_type, dataset_path, logdir, config_filepath, epochs, validation_split):
     '''
     Trains the specified model.
 
@@ -203,12 +205,13 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs):
     from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
 
     model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
-    model_checkpoint_path = model_logdir / 'model-{epoch:02d}-{val_accuracy:.2f}'
+    model_checkpoint_path = model_logdir / 'model-{epoch:02d}-{val_loss:.2f}'
 
     tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq=25, profile_batch=0, write_graph=False, write_images=False)
     model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='val_loss', verbose=1, 
-                                                save_freq=100, save_best_only=False, mode='auto')
+                                                save_freq=1000, save_best_only=False, mode='auto')
 
     optimizer = optimizers.Adam(learning_rate=config.train.learning_rate)
     model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-    training_history = model.fit(train_dataset, epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])
+    training_history = model.fit(train_dataset, validation_split=validation_split, epochs=epochs,
+                                 callbacks=[tensorboard_callback, model_checkpoint_callback])

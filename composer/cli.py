@@ -101,13 +101,16 @@ class ModelType(Enum):
 
     MUSIC_RNN = 'music_rnn'
 
-    def create_model(self, config, **kwargs):
+    def create_model(self, config, dimensions, **kwargs):
         '''
         Creates the model class associated with this :class:`ModelType` using the 
         values in the specified :class:`composer.config.ConfigInstance` object.
 
         :param config:
             A :class:`composer.config.ConfigInstance` containing the configuration values.
+        :param dimensions:
+            A two-dimensional tuple of integers containing the input and output event dimensions;
+            that is, the dimensions of a single feature and the dimensions of a single label respectively.
         :param **kwargs:
             External data passed to the creation method (i.e. data not in the configuration file)
         :returns:
@@ -119,7 +122,7 @@ class ModelType(Enum):
             from composer import models
 
             return models.MusicRNN(
-                kwargs['event_dimensions'], config.model.window_size, config.model.lstm_layers_count,
+                *dimensions, config.model.window_size, config.model.lstm_layers_count,
                 config.model.lstm_layer_sizes, config.model.lstm_dropout_probability, 
                 config.model.dense_layer_size, config.model.use_batch_normalization
             )
@@ -193,30 +196,19 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs):
 
     config = composer.config.get(config_filepath)
     train_dataset, dimensions = model_type.get_train_set(dataset_path, config)
-    print(dimensions)
-    # The event dimensions is the size of a single one-hot vector. We can use the loaded dataset and simply grab its shape.
-    # The train dataset returns X and Y. The X is the input which shape (batch_size, time_steps, sequence_size),
-    # where sequence_size is the size of a single input sequence (i.e. the size of the one-hot vector).
-    # event_dimensions = train_dataset.take(1).shape[-1]
-    # 
-    # Since train_dataset.take(1) returns a TakeDataset object, we need to first convert it to an iterator.
-    # Using the as_numpy_iterator method, we have a generator object that contains the first and second outputs
-    # of the train_dataset generator method (these are the inputs and outputs). Using the next method, we get
-    # the NEXT element in the iterator, which happens to be input, and finally we get its shape.
-
-    # event_dimensions = next(train_dataset.take(1).as_numpy_iterator())[0].shape[-1]
-    # # model = model_type.create_model(config, event_dimensions=event_dimensions)
+  
+    model = model_type.create_model(config, dimensions)
     
-    # # from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
-    # # from tensorflow.keras import optimizers
+    # from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
+    # from tensorflow.keras import optimizers
 
-    # # model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
-    # # model_checkpoint_path = model_logdir / 'model-{epoch:02d}'
+    # model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+    # model_checkpoint_path = model_logdir / 'model-{epoch:02d}'
 
-    # # tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq=25, profile_batch=0, write_graph=False, write_images=False)
-    # # model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='val_loss', 
-    # #                                             verbose=1, save_best_only=True, mode='auto')
+    # tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq=25, profile_batch=0, write_graph=False, write_images=False)
+    # model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='val_loss', 
+    #                                             verbose=1, save_best_only=True, mode='auto')
 
-    # # optimizer = optimizers.Adam(learning_rate=config.train.learning_rate)
-    # # model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-    # # training_history = model.fit(train_dataset, epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])
+    # optimizer = optimizers.Adam(learning_rate=config.train.learning_rate)
+    # model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+    # training_history = model.fit(train_dataset, epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])

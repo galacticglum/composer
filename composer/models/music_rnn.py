@@ -182,9 +182,11 @@ def create_music_rnn_dataset(filepaths, batch_size, window_size, use_generator=F
             The number of events in a single input sequence.
 
         '''
-
+        
         event_ids, event_value_ranges, event_ranges, sequence_settings = \
-            sequence.IntegerEncodedEventSequence.event_ids_from_file(filepath)
+            sequence.IntegerEncodedEventSequence.event_ids_from_file(filepath, as_numpy_array=True)
+        
+        event_ids = event_ids.reshape((len(event_ids), 1))
 
         # The number of events that we can extract from the sample.
         # While every input sequence only contains window_size number of 
@@ -197,13 +199,13 @@ def create_music_rnn_dataset(filepaths, batch_size, window_size, use_generator=F
             input_events = event_ids[start:end-1]
 
             # Split the events into inputs (x) and outputs (y)
-            x = np.asarray(input_events).reshape((window_size, 1))
+            x = input_events
 
             # We need to convert the event id to an Event object since it is
             # required by OneHotEncodedEventSequence.event_as_one_hot_vector.
-            event = sequence.IntegerEncodedEventSequence.id_to_event(event_ids[end - 1], event_ranges, event_value_ranges)
-            y = np.asarray(sequence.OneHotEncodedEventSequence.event_as_one_hot_vector(event, event_ranges, event_value_ranges))
- 
+            event = sequence.IntegerEncodedEventSequence.id_to_event(event_ids[end - 1][0], event_ranges, event_value_ranges)
+            y = sequence.OneHotEncodedEventSequence.event_as_one_hot_vector(event, event_ranges, event_value_ranges, as_numpy_array=True)
+
             yield x, y
 
     def _generator(filepaths, window_size):
@@ -238,11 +240,11 @@ def create_music_rnn_dataset(filepaths, batch_size, window_size, use_generator=F
         _loader_func = lambda filepath: list(_get_sequences_from_file(filepath, window_size))
         import time
         start=time.time()
-        # data = parallel_process(filepaths, _loader_func, multithread=True, n_jobs=16, front_num=0)
-        data = [_loader_func(filepath) for filepath in filepaths]
+        # data = [_loader_func(filepath) for filepath in filepaths]
+        data = parallel_process(filepaths, _loader_func, multithread=True, n_jobs=16, front_num=0)
         end=time.time()
+        # print(data[0])
         print('data len', len(data), '| elapsed:', round(end-start, 4))
-        # print(data)
 
     if use_generator:
         dataset = dataset.prefetch(prefetch_buffer_size)

@@ -1190,7 +1190,7 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
         return 9223372036854775806
 
     @classmethod
-    def event_as_one_hot_vector(cls, event, event_ranges, event_value_ranges):
+    def event_as_one_hot_vector(cls, event, event_ranges, event_value_ranges, as_numpy_array=False):
         '''
         Converts an :class:`Event` to a one-hot vector.
 
@@ -1200,13 +1200,19 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
             The range of each event type in the one-hot encoded vector.
         :param event_value_ranges:
             The range of values for each :class:`EventType`.
+        :param as_numpy_array:
+            Indicates whether a numpy array should be returned. Defaults to ``False``.
         :returns:
-            A list of integers (consisting of either 0 or 1) representing
-            the event as a one-hot vector.
+            An array-like object of integers (consisting of either 0 or 1) 
+            representing the event as a one-hot vector.
 
         '''
 
-        vector = [0] * cls.get_one_hot_size(event_ranges)
+        if as_numpy_array:
+            vector = np.zeros(cls.get_one_hot_size(event_ranges), dtype=np.int)
+        else:
+            vector = [0] * cls.get_one_hot_size(event_ranges)
+
         index_offset = 0
         if event.value is not None:
             index_offset = event.value - event_value_ranges[event.type].start
@@ -1457,7 +1463,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
                 return Event(event_type, value)
 
     @classmethod
-    def event_ids_from_file(cls, filepath):
+    def event_ids_from_file(cls, filepath, as_numpy_array=False):
         '''
         Loads an :class:`IntegerEncodedEventSequence` from
         the specified filepath as single integer event ids.
@@ -1468,6 +1474,9 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
 
         :param filepath:
             The source of the encoded sequence.
+        :param as_numpy_array:
+            Indicates whether the event ids should be returned as a numpy array.
+            Defaults to ``False``.
         :returns:
             A list of integers representing the event ids, a ``collections.OrderedDict`` containing
             the event value ranges, a ``collections.OrderedDict`` representing the event ranges,
@@ -1480,6 +1489,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
         with open(filepath, 'rb') as file:
             time_step_increment, max_time_steps, velocity_bins, header_size = cls._load_file_header(file)
 
+            # The size of a single encoded event, in bytes.
             event_size = struct.calcsize(cls._EVENT_FORMAT)
             buffer_length = Path(filepath).stat().st_size - header_size
 
@@ -1487,10 +1497,16 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             event_value_ranges = EventSequence._compute_event_value_ranges(time_step_increment, max_time_steps, velocity_bins)
             event_ranges = EventSequence._compute_event_ranges(EventSequence._compute_event_dimensions(event_value_ranges))
 
-            event_ids = []
-            for i in range(buffer_length // event_size):
+            # The number of events to encode.
+            event_count = buffer_length // event_size
+            if as_numpy_array:
+                event_ids = np.empty(event_count, dtype=np.int)
+            else:
+                event_ids = [0] * event_ids
+            
+            for i in range(event_count):
                 event_type, value = struct.unpack(cls._EVENT_FORMAT, file.read(event_size))
-                event_ids.append(cls.event_to_id(_EVENT_TYPE_MAPPINGS[event_type], value, event_ranges, event_value_ranges))
+                event_ids[i] = cls.event_to_id(_EVENT_TYPE_MAPPINGS[event_type], value, event_ranges, event_value_ranges)
 
             settings = (time_step_increment, max_time_steps, velocity_bins)
             return event_ids, event_value_ranges, event_ranges, settings

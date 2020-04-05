@@ -1424,7 +1424,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
         '''
 
         offset = 0
-        if event_value is not None:
+        if event_value_ranges[event_type] is not None:
             offset = event_value - event_value_ranges[event_type].start
         return event_ranges[event_type].start + offset
 
@@ -1469,7 +1469,11 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
         :param filepath:
             The source of the encoded sequence.
         :returns:
-            A list of integers representing the event ids, the event value ranges, and the event ranges.
+            A list of integers representing the event ids, a ``collections.OrderedDict`` containing
+            the event value ranges, a ``collections.OrderedDict`` representing the event ranges,
+            and an additional three-dimensional tuple of integers representing the settings
+            of the event sequence. It contains the time step increment, max time steps, 
+            and velocity bins in that order.
 
         '''
         
@@ -1488,7 +1492,8 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
                 event_type, value = struct.unpack(cls._EVENT_FORMAT, file.read(event_size))
                 event_ids.append(cls.event_to_id(_EVENT_TYPE_MAPPINGS[event_type], value, event_ranges, event_value_ranges))
 
-            return event_ids, event_value_ranges, event_ranges
+            settings = (time_step_increment, max_time_steps, velocity_bins)
+            return event_ids, event_value_ranges, event_ranges, settings
 
     def get_encoding_type():
         '''

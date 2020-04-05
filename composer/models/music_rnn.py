@@ -238,13 +238,7 @@ def create_music_rnn_dataset(filepaths, batch_size, window_size, use_generator=F
         )
     else:
         _loader_func = lambda filepath: list(_get_sequences_from_file(filepath, window_size))
-        import time
-        start=time.time()
-        # data = [_loader_func(filepath) for filepath in filepaths]
         data = parallel_process(filepaths, _loader_func, multithread=True, n_jobs=16, front_num=0)
-        end=time.time()
-        # print(data[0])
-        print('data len', len(data), '| elapsed:', round(end-start, 4))
 
     if use_generator:
         dataset = dataset.prefetch(prefetch_buffer_size)

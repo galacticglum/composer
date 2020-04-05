@@ -1404,7 +1404,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
                 return IntegerEncodedEventSequence(time_step_increment, max_time_steps, velocity_bins, events)
 
     @staticmethod
-    def event_to_id(event_type, event_value, event_ranges):
+    def event_to_id(event_type, event_value, event_ranges, event_value_ranges):
         '''
         Converts an event to an id.
 
@@ -1413,13 +1413,20 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
         :param event_value:
             The value of the event. Can be ``None``.
         :param event_ranges:
-            The range of each event type in the one-hot encoded vector.
+            A :class:`collections.OrderedDict` representing the range of 
+            each event type in the one-hot encoded vector.
+        :param event_value_ranges:
+            A :class:`collections.OrderedDict` representing the range of 
+            values for each :class:`EventType`.
         :returns:
             An integer id representing the event.
 
         '''
 
-        return event_ranges[event_type].start + (event_value or 0)
+        offset = 0
+        if event_value is not None:
+            offset = event_value - event_value_ranges[event_type].start
+        return event_ranges[event_type].start + offset
 
     @staticmethod
     def id_to_event(event_id, event_ranges, event_value_ranges):
@@ -1443,7 +1450,10 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             if event_id in interval:
                 # An event value range of type None means that the event has no value
                 # (i.e. the value of the event is None itself).
-                value = None if event_value_ranges[event_type] is None else event_id - interval.start
+                value = None
+                if event_value_ranges[event_type] is not None:
+                    value = event_id - interval.start + event_value_ranges[event_type].start
+                
                 return Event(event_type, value)
 
     @classmethod
@@ -1476,7 +1486,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             event_ids = []
             for i in range(buffer_length // event_size):
                 event_type, value = struct.unpack(cls._EVENT_FORMAT, file.read(event_size))
-                event_ids.append(cls.event_to_id(_EVENT_TYPE_MAPPINGS[event_type], value, event_ranges))
+                event_ids.append(cls.event_to_id(_EVENT_TYPE_MAPPINGS[event_type], value, event_ranges, event_value_ranges))
 
             return event_ids, event_value_ranges, event_ranges
 

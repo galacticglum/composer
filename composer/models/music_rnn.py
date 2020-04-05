@@ -235,12 +235,23 @@ def create_music_rnn_dataset(filepaths, batch_size, window_size, use_generator=F
             output_types=(tf.float32, tf.float32),
             output_shapes=((window_size, input_event_dimensions), (output_event_dimensions,)),
             args=(filepaths, window_size)
-        )
+        ).shuffle(50 * batch_size)
     else:
         _loader_func = lambda filepath: list(_get_sequences_from_file(filepath, window_size))
-        data = parallel_process(filepaths, _loader_func, multithread=True, n_jobs=16, front_num=0)
+        data = parallel_process(filepaths, _loader_func, multithread=True, n_jobs=16,
+                                front_num=0, show_progress_bar=show_loading_progress_bar)
 
+        dataset = tf.data.Dataset.from_generator(
+            # Generator function that flattens a list of lists into a single list.
+            # For example, suppose x = [[(1, 1), (2, 2)], [(3, 3)]].
+            # The output of the flatten function is [(1, 1), (2, 2), (3, 3)].
+            lambda: [item for sublist in data for item in sublist],
+            output_types=(tf.float32, tf.float32),
+            output_shapes=((window_size, input_event_dimensions), (output_event_dimensions,))
+        ).shuffle(len(data) * 2)
+
+    dataset = dataset.batch(batch_size)
     if use_generator:
         dataset = dataset.prefetch(prefetch_buffer_size)
     
-    return None
+    return dataset

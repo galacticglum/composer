@@ -9,7 +9,7 @@ from queue import Queue
 from collections import deque
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
-def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3, multithread=False):
+def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3, multithread=False, show_progress_bar=True):
     '''
     A parallel version of the map function with a progress bar. 
 
@@ -35,7 +35,9 @@ def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3, 
     :param multithread:
         If ``True``, a ``ThreadPoolExecutor`` will be used rather than a ``ProcessPoolExecutor``.
         Defaults to ``False``.
-
+    :param show_progress_bar:
+        Indicates whether a loading progress bar should be displayed while the process rns.
+        Defaults to ``True``.
     :returns:
         A list of the form [function(array[0]), function(array[1]), ...].
 

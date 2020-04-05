@@ -155,8 +155,8 @@ class ModelType(Enum):
                                '\'{}\', has no train or test folder.'.fromat(dataset_path))
 
         # Get all the dataset files in each directory (train and test)
-        train_files = train_dataset_path.glob('**/*.{}'.format(composer.dataset.preprocess._OUTPUT_EXTENSION))
-        test_files = test_dataset_path.glob('**/*.{}'.format(composer.dataset.preprocess._OUTPUT_EXTENSION))
+        train_files = list(train_dataset_path.glob('**/*.{}'.format(composer.dataset.preprocess._OUTPUT_EXTENSION)))
+        test_files = list(test_dataset_path.glob('**/*.{}'.format(composer.dataset.preprocess._OUTPUT_EXTENSION)))
 
         # Creates the MusicRNNDataset.
         def _load_music_rnn_dataset():

@@ -1100,6 +1100,9 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
 
         :param filepath:
             The source of the encoded sequence.
+        :param decode:
+            Indicates whether the :class:`OneHotEncodedEventSequence` file should be 
+            directly decoded to an event sequence. Defaults to ``False``.
         :returns:
             An instance of :class:`OneHotEncodedEventSequence`.
 

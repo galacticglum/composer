@@ -252,7 +252,7 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs):
     from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
 
     model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
-    model_checkpoint_path = model_logdir / 'model-{epoch:02d}-{loss:.2f}.hdf5'
+    model_checkpoint_path = model_logdir / 'model-{epoch:02d}-{loss:.2f}.h5'
 
     tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq=25, profile_batch=0, write_graph=False, write_images=False)
     model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='loss', verbose=1, 
@@ -279,7 +279,7 @@ def evaluate(model_type, dataset_path, restoredir, config_filepath):
     config = composer.config.get(config_filepath)
     test_dataset, dimensions = model_type.get_test_dataset(dataset_path, config)
     
-    from tensorflow.keras.models import load_model
+    # from tensorflow.keras.models import load_model
     # model = load_model(restoredir)
     model = model_type.create_model(config, dimensions)
     print(model)

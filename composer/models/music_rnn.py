@@ -193,10 +193,7 @@ def create_music_rnn_dataset(filepaths, batch_size, window_size, use_generator=F
         sequence_count = len(event_ids) // extract_events_count
         for i in range(sequence_count):
             start, end = i * extract_events_count, extract_events_count * (i + 1)
-            input_events = event_ids[start:end-1]
-
-            # Split the events into inputs (x) and outputs (y)
-            x = input_events
+            x = event_ids[start:end-1]
 
             # We need to convert the event id to an Event object since it is
             # required by OneHotEncodedEventSequence.event_as_one_hot_vector.

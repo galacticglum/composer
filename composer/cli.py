@@ -217,9 +217,9 @@ class ModelType(Enum):
 # The default configuration file for the MusicRNN model.
 _MUSIC_RNN_DEFAULT_CONFIG = Path(__file__).parent / 'music_rnn_config.yml'
 
-def _build_model(model, config):
+def _compile_model(model, config):
     '''
-    Builds the specified ``model``.
+    Compiles the specified ``model``.
 
     '''
 
@@ -258,7 +258,7 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs):
     model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='loss', verbose=1, 
                                                 save_freq=1000, save_best_only=False, mode='auto', save_weights_only=True)
 
-    _build_model(model, config)
+    _compile_model(model, config)
     training_history = model.fit(train_dataset, epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])
 
 @cli.command()
@@ -279,12 +279,10 @@ def evaluate(model_type, dataset_path, restoredir, config_filepath):
     config = composer.config.get(config_filepath)
     test_dataset, dimensions = model_type.get_test_dataset(dataset_path, config)
     
-    # from tensorflow.keras.models import load_model
-    # model = load_model(restoredir)
     model = model_type.create_model(config, dimensions)
-    print(model)
+    _compile_model(model, config)
+    model.build(input_shape=(config.train.batch_size, config.model.window_size, dimensions[0]))
     model.load_weights(restoredir)
-    _build_model(model, config)
 
-    scores = model.evaluate(test_dataset, verbose=0)
-    print(scores)
+    loss, accuracy = model.evaluate(test_dataset, verbose=0)
+    logging.info('- Finished evaluating model. Loss: {:.4f}, Accuracy: {:.4f}'.format(loss, accuracy))

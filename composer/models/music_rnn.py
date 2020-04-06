@@ -87,17 +87,14 @@ class MusicRNN(Model):
             # Time steps refers to how many input sequences there are, and sequence_length is the number of units in one
             # input sequence. In our case, since the input is a one-hot vector, a single input sequence is the size of
             # this vector. Time steps is the number of one-hot vectors that we are passing in.
-            lstm_layer = layers.LSTM(lstm_layer_sizes[i], input_shape=(window_size, input_event_dimensions), 
-                                     return_sequences=i < lstm_layers_count - 1)
-
-            dropout_layer = layers.Dropout(lstm_dropout_probability[i])
+            self.lstm_layers.append(layers.LSTM(lstm_layer_sizes[i], input_shape=(window_size, input_event_dimensions), 
+                                    return_sequences=i < lstm_layers_count - 1) )
+            self.dropout_layers.append(layers.Dropout(lstm_dropout_probability[i]))
 
             if use_batch_normalization:
                 self.normalization_layers.append(layers.BatchNormalization())
 
-            self.lstm_layers.append(lstm_layer)
-            self.dropout_layers.append(dropout_layer)
-        
+
         self.output_layer = layers.Dense(output_event_dimensions, activation='softmax')
 
     def call(self, inputs):

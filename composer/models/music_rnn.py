@@ -23,7 +23,7 @@ class MusicRNN(Model):
     '''
 
     def __init__(self, input_event_dimensions, output_event_dimensions, window_size, lstm_layers_count, 
-                 lstm_layer_sizes, lstm_dropout_probability, dense_layer_size=256, use_batch_normalization=True):
+                 lstm_layer_sizes, lstm_dropout_probability, use_batch_normalization=True):
 
         '''
         Initialize an instance of :class:`MusicRNN`.
@@ -48,9 +48,6 @@ class MusicRNN(Model):
             the dropout will be uniform across all layers; otherwise, it should an array-like object
             (equal in size to the ``lstm_layers_count`` parameter) that denotes the dropout probability
             per LSTM layer in the network.
-        :param dense_layer_size:
-            The number of units in the hidden :class:`tensorflow.keras.layers.Dense` layer preceeding the output.
-            Defaults to 256.
         :param use_batch_normalization:
             Indicates whether each LSTM layer should be followed by a :class:`tensorflow.keras.layers.BatchNormalization`
             layer. Defaults to ``True``. 
@@ -101,7 +98,6 @@ class MusicRNN(Model):
             self.lstm_layers.append(lstm_layer)
             self.dropout_layers.append(dropout_layer)
         
-        self.dense_layer = layers.Dense(dense_layer_size, activation='relu')
         self.output_layer = layers.Dense(output_event_dimensions, activation='softmax')
 
     def call(self, inputs):
@@ -126,7 +122,6 @@ class MusicRNN(Model):
             if self.normalization_layers is not None:
                 inputs = self.normalization_layers[i](inputs)
 
-        inputs = self.dense_layer(inputs)
         inputs = self.output_layer(inputs)
 
         return inputs
@@ -243,17 +238,20 @@ def create_music_rnn_dataset(filepaths, batch_size, window_size, use_generator=F
         logging.info('- Loading dataset (\'{}\') into memory.'.format(filepaths[0].parent))
         data = parallel_process(filepaths, _loader_func, multithread=True, n_jobs=16,
                                 front_num=0, show_progress_bar=show_loading_progress_bar)
+        
+        # Generator function that flattens a list of lists into a single list.
+        # For example, suppose x = [[(1, 1), (2, 2)], [(3, 3)]].
+        # The output of the flatten function is [(1, 1), (2, 2), (3, 3)].
+        flatten = lambda x: [item for sublist in x for item in sublist]
+        data = flatten(data)
 
         dataset = tf.data.Dataset.from_generator(
-            # Generator function that flattens a list of lists into a single list.
-            # For example, suppose x = [[(1, 1), (2, 2)], [(3, 3)]].
-            # The output of the flatten function is [(1, 1), (2, 2), (3, 3)].
-            lambda: [item for sublist in data for item in sublist],
+            lambda: data,
             output_types=(tf.float32, tf.float32),
             output_shapes=((window_size, input_event_dimensions), (output_event_dimensions,))
         ).shuffle(len(data) * 2, reshuffle_each_iteration=True)
 
-    dataset = dataset.batch(batch_size)
+    dataset = dataset.batch(batch_size, drop_remainder=True)
     if use_generator:
         dataset = dataset.prefetch(prefetch_buffer_size)
     

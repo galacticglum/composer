@@ -16,7 +16,7 @@ import composer.dataset.preprocess
 from pathlib import Path
 from enum import Enum, unique
 from composer.click_utils import EnumType
-from composer.exceptions import DatasetError
+from composer.exceptions import DatasetError, InvalidParameterError
 
 def _set_verbosity_level(logger, value):
     '''
@@ -123,8 +123,8 @@ class ModelType(Enum):
 
             return models.MusicRNN(
                 *dimensions, config.model.window_size, config.model.lstm_layers_count,
-                config.model.lstm_layer_sizes, config.model.lstm_dropout_probability, 
-                config.model.dense_layer_size, config.model.use_batch_normalization
+                config.model.lstm_layer_sizes, config.model.lstm_dropout_probability,
+                config.model.use_batch_normalization
             )
 
         # An easy way to map the creation functions to their respective types.
@@ -134,8 +134,51 @@ class ModelType(Enum):
         }
 
         return function_map[self]()
-    
-    def get_train_set(self, dataset_path, config):
+        
+    def get_dataset(self, dataset_path, mode, config):
+        '''
+        Loads a dataset for this :class:`ModelType` using the values 
+        in the specified :class:`composer.config.ConfigInstance` object.
+
+        :param dataset_path:
+            The path to the preprocessed dataset organized into two subdirectories: train and test.
+        :param mode:
+            A string indicating the dataset mode: ``train`` or ``test``.
+        :param config:
+            A :class:`composer.config.ConfigInstance` containing the configuration values.
+        :returns:
+            A :class:`tensorflow.data.Dataset` object representing the dataset and
+            a two-dimensional tuple of integers representing input and output dimensions
+            of the dataset (i.e. the dimensions of a single feature and label respectively).
+        
+        '''
+
+        if mode not in ['train', 'test']:
+            raise InvalidParameterError('\'{}\' is an invalid dataset mode! Must be one of: \'train\', \'test\'.'.format(mode))
+
+        dataset_path = Path(dataset_path) / mode
+        if not dataset_path.exists():
+            raise DatasetError('Could not get {mode} dataset since the specified dataset directory, ' +
+                               '\'{}\', has no {mode} folder.'.fromat(dataset_path, mode=mode))
+
+        files = list(dataset_path.glob('**/*.{}'.format(composer.dataset.preprocess._OUTPUT_EXTENSION)))
+
+        # Creates the MusicRNNDataset.
+        def _load_music_rnn_dataset():
+            from composer.models.music_rnn import create_music_rnn_dataset
+            dataset, dimensions = create_music_rnn_dataset(files, config.train.batch_size, config.model.window_size)
+
+            return dataset, dimensions
+
+        # An easy way to map the creation functions to their respective types.
+        # This is a lot better than doing something like an if/elif statement.
+        function_map = {
+            ModelType.MUSIC_RNN: _load_music_rnn_dataset
+        }
+
+        return function_map[self]()
+
+    def get_train_dataset(self, dataset_path, config):
         '''
         Loads the training dataset for this :class:`ModelType` using the values 
         in the specified :class:`composer.config.ConfigInstance` object.
@@ -151,32 +194,39 @@ class ModelType(Enum):
         
         '''
 
-        dataset_path = Path(dataset_path)
-        train_dataset_path = dataset_path / 'train'
-        if not train_dataset_path.exists():
-            raise DatasetError('Could not get train dataset since the specified dataset directory, ' +
-                               '\'{}\', has no train folder.'.fromat(dataset_path))
+        return self.get_dataset(dataset_path, 'train', config)
 
-        # Get all the dataset files in each directory (train and test)
-        train_files = list(train_dataset_path.glob('**/*.{}'.format(composer.dataset.preprocess._OUTPUT_EXTENSION)))
+    def get_test_dataset(self, dataset_path, config):
+        '''
+        Loads the testing dataset for this :class:`ModelType` using the values 
+        in the specified :class:`composer.config.ConfigInstance` object.
 
-        # Creates the MusicRNNDataset.
-        def _load_music_rnn_dataset():
-            from composer.models.music_rnn import create_music_rnn_dataset
-            train_set, dimensions = create_music_rnn_dataset(train_files, config.train.batch_size, config.model.window_size)
+        :param dataset_path:
+            The path to the preprocessed dataset organized into two subdirectories: train and test.
+        :param config:
+            A :class:`composer.config.ConfigInstance` containing the configuration values.
+        :returns:
+            A :class:`tensorflow.data.Dataset` object representing the testing dataset and
+            a two-dimensional tuple of integers representing input and output dimensions
+            of the dataset (i.e. the dimensions of a single feature and label respectively).
+        
+        '''
 
-            return train_set, dimensions
-
-        # An easy way to map the creation functions to their respective types.
-        # This is a lot better than doing something like an if/elif statement.
-        function_map = {
-            ModelType.MUSIC_RNN: _load_music_rnn_dataset
-        }
-
-        return function_map[self]()
+        return self.get_dataset(dataset_path, 'test', config)
 
 # The default configuration file for the MusicRNN model.
 _MUSIC_RNN_DEFAULT_CONFIG = Path(__file__).parent / 'music_rnn_config.yml'
+
+def _build_model(model, config):
+    '''
+    Builds the specified ``model``.
+
+    '''
+
+    from tensorflow.keras import optimizers
+
+    optimizer = optimizers.Adam(learning_rate=config.train.learning_rate)
+    model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
 
 @cli.command()
 @click.argument('model-type', type=EnumType(ModelType, False))
@@ -195,20 +245,46 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs):
         config_filepath = _MUSIC_RNN_DEFAULT_CONFIG
 
     config = composer.config.get(config_filepath)
-    train_dataset, dimensions = model_type.get_train_set(dataset_path, config)
+    train_dataset, dimensions = model_type.get_train_dataset(dataset_path, config)
   
     model = model_type.create_model(config, dimensions)
 
-    from tensorflow.keras import optimizers
     from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
 
     model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
-    model_checkpoint_path = model_logdir / 'model-{epoch:02d}-{loss:.2f}'
+    model_checkpoint_path = model_logdir / 'model-{epoch:02d}-{loss:.2f}.hdf5'
 
     tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq=25, profile_batch=0, write_graph=False, write_images=False)
     model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='loss', verbose=1, 
-                                                save_freq=1000, save_best_only=False, mode='auto')
+                                                save_freq=1000, save_best_only=False, mode='auto', save_weights_only=True)
 
-    optimizer = optimizers.Adam(learning_rate=config.train.learning_rate)
-    model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+    _build_model(model, config)
     training_history = model.fit(train_dataset, epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])
+
+@cli.command()
+@click.argument('model-type', type=EnumType(ModelType, False))
+@click.argument('dataset-path')
+@click.argument('restoredir')
+@click.option('-c', '--config', 'config_filepath', default=None, 
+              help='The path to the model configuration file. If unspecified, uses the default config for the model.')
+def evaluate(model_type, dataset_path, restoredir, config_filepath):
+    '''
+    Evaluate the specified model.
+
+    '''
+
+    if config_filepath is None:
+        config_filepath = _MUSIC_RNN_DEFAULT_CONFIG
+
+    config = composer.config.get(config_filepath)
+    test_dataset, dimensions = model_type.get_test_dataset(dataset_path, config)
+    
+    from tensorflow.keras.models import load_model
+    # model = load_model(restoredir)
+    model = model_type.create_model(config, dimensions)
+    print(model)
+    model.load_weights(restoredir)
+    _build_model(model, config)
+
+    scores = model.evaluate(test_dataset, verbose=0)
+    print(scores)

@@ -405,7 +405,9 @@ def visualize_training(model_type, dataset_path, config_filepath, steps, decode_
               '(rather than into memory all at once). Defaults to False.')
 @click.option('--backup-config/--no-backup--config', default=True, help='Makes a copy of the configuration file used ' +
               'in the model\'s output directory. Defaults to True.')
-def train(model_type, dataset_path, logdir, config_filepath, epochs, use_generator, backup_config):
+@click.option('--max-files', default=None, help='The maximum number of files to load. Defaults to None, which means  ' + 
+              'that ALL files will be loaded.', type=int)
+def train(model_type, dataset_path, logdir, config_filepath, epochs, use_generator, backup_config, max_files):
     '''
     Trains the specified model.
 
@@ -429,7 +431,7 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs, use_generat
 
     compile_model(model, config)
     
-    train_dataset = model_type.get_train_dataset(dataset_path, config, use_generator)
+    train_dataset = model_type.get_train_dataset(dataset_path, config, use_generator, max_files=max_files)
     training_history = model.fit(train_dataset, epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])
 
 @cli.command()
@@ -441,7 +443,9 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs, use_generat
 @click.option('--use-generator/--no-use-generator', default=False,
               help='Indicates whether the dataset should be loaded in chunks during processing ' +
               '(rather than into memory all at once). Defaults to False.')
-def evaluate(model_type, dataset_path, restoredir, config_filepath, use_generator):
+@click.option('--max-files', default=None, help='The maximum number of files to load. Defaults to None, which means  ' + 
+              'that ALL files will be loaded.', type=int)
+def evaluate(model_type, dataset_path, restoredir, config_filepath, use_generator, max_files):
     '''
     Evaluate the specified model.
 
@@ -456,7 +460,7 @@ def evaluate(model_type, dataset_path, restoredir, config_filepath, use_generato
     model.load_weights(tf.train.latest_checkpoint(restoredir))
     model.build(input_shape=(config.train.batch_size, config.model.window_size, dimensions))
 
-    test_dataset = model_type.get_test_dataset(dataset_path, config, use_generator)
+    test_dataset = model_type.get_test_dataset(dataset_path, config, use_generator, max_files=max_files)
     loss, accuracy = model.evaluate(test_dataset, verbose=0)
     logging.info('- Finished evaluating model. Loss: {:.4f}, Accuracy: {:.4f}'.format(loss, accuracy))
 

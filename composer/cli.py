@@ -101,6 +101,19 @@ def preprocess(dataset_path, output_directory, num_workers, config_filepath,
 
         json.dump(metadata, metadata_file, indent=True)
 
+def get_event_dimensions(config):
+    '''
+    Computes the dimension of a single event input in the network.
+
+    '''
+    
+    from composer.dataset.sequence import EventSequence, OneHotEncodedEventSequence
+    event_value_ranges = EventSequence._compute_event_value_ranges(config.dataset.time_step_increment, \
+                                    config.dataset.max_time_steps, config.dataset.velocity_bins)
+    event_dimensions = EventSequence._compute_event_dimensions(event_value_ranges)
+    event_ranges = EventSequence._compute_event_ranges(event_dimensions)
+
+    return OneHotEncodedEventSequence.get_one_hot_size(event_ranges)
 @unique
 class ModelType(Enum):
     '''
@@ -110,21 +123,21 @@ class ModelType(Enum):
 
     MUSIC_RNN = 'music_rnn'
 
-    def create_model(self, config, dimensions, **kwargs):
+    def create_model(self, config, **kwargs):
         '''
         Creates the model class associated with this :class:`ModelType` using the 
         values in the specified :class:`composer.config.ConfigInstance` object.
 
         :param config:
             A :class:`composer.config.ConfigInstance` containing the configuration values.
-        :param dimensions:
-            A two-dimensional tuple of integers containing the input and output event dimensions;
-            that is, the dimensions of an event (a single feature and label).
         :param **kwargs:
             External data passed to the creation method (i.e. data not in the configuration file)
         :returns:
-            A :class:`tensorflow.keras.Model` object representing an instance of the specfiied model.
+            A :class:`tensorflow.keras.Model` object representing an instance of the specified model
+            and the dimensions of an event (single feature and label) in the dataset.
         '''
+
+        dimensions = get_event_dimensions(config)
 
         # Creates the MusicRNN model.
         def _create_music_rnn():
@@ -142,7 +155,7 @@ class ModelType(Enum):
             ModelType.MUSIC_RNN: _create_music_rnn
         }
 
-        return function_map[self]()
+        return function_map[self](), dimensions
         
     def get_dataset(self, dataset_path, mode, config, max_files=None, show_progress_bar=True):
         '''
@@ -162,8 +175,7 @@ class ModelType(Enum):
             Indicates whether a loading progress bar should be displayed while the dataset is loaded
             into memory. Defaults to ``True``.
         :returns:
-            A :class:`tensorflow.data.Dataset` object representing the dataset and
-            the dimensions of an event (single feature and label) in the dataset.
+            A :class:`tensorflow.data.Dataset` object representing the dataset.
         
         '''
 
@@ -184,11 +196,11 @@ class ModelType(Enum):
             if max_files is not None:
                 files = files[:max_files]
 
-            dataset, dimensions = load_dataset(files, config.train.batch_size, config.model.window_size, 
+            dataset, _ = load_dataset(files, config.train.batch_size, config.model.window_size, 
                                                 input_event_encoding=EventEncodingType.ONE_HOT, 
                                                 show_loading_progress_bar=show_progress_bar)
 
-            return dataset, dimensions
+            return dataset
 
         # An easy way to map the creation functions to their respective types.
         # This is a lot better than doing something like an if/elif statement.
@@ -214,8 +226,7 @@ class ModelType(Enum):
             Indicates whether a loading progress bar should be displayed while the dataset is loaded 
             into memory. Defaults to ``True``.
         :returns:
-            A :class:`tensorflow.data.Dataset` object representing the training dataset and
-            the dimensions of an event (single feature and label) in the dataset.
+            A :class:`tensorflow.data.Dataset` object representing the training dataset.
         
         '''
 
@@ -237,8 +248,7 @@ class ModelType(Enum):
             Indicates whether a loading progress bar should be displayed while the dataset is loaded 
             into memory. Defaults to ``True``.
         :returns:
-            A :class:`tensorflow.data.Dataset` object representing the testing dataset and
-            the dimensions of an event (single feature and label) in the dataset.
+            A :class:`tensorflow.data.Dataset` object representing the testing dataset.
         
         '''
 
@@ -247,7 +257,7 @@ class ModelType(Enum):
 # The default configuration file for the MusicRNN model.
 _MUSIC_RNN_DEFAULT_CONFIG = Path(__file__).parent / 'music_rnn_config.yml'
 
-def _compile_model(model, config):
+def compile_model(model, config):
     '''
     Compiles the specified ``model``.
 
@@ -261,10 +271,9 @@ def _compile_model(model, config):
 
 @cli.command()
 @click.argument('model-type', type=EnumType(ModelType, False))
-@click.argument('dataset-path')
 @click.option('-c', '--config', 'config_filepath', default=None, 
               help='The path to the model configuration file. If unspecified, uses the default config for the model.')
-def summary(model_type, dataset_path, config_filepath):
+def summary(model_type, config_filepath):
     '''
     Prints a summary of the model.
 
@@ -275,10 +284,7 @@ def summary(model_type, dataset_path, config_filepath):
 
     config = composer.config.get(config_filepath)
 
-    # Load a single file from the dataset to get the dimensions
-    _, dimensions = model_type.get_train_dataset(dataset_path, config, max_files=1, show_progress_bar=False)
-  
-    model = model_type.create_model(config, dimensions)
+    model, dimensions = model_type.create_model(config)
     model.build(input_shape=(config.train.batch_size, config.model.window_size, dimensions))
     model.summary()
 
@@ -299,9 +305,7 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs):
         config_filepath = _MUSIC_RNN_DEFAULT_CONFIG
 
     config = composer.config.get(config_filepath)
-    train_dataset, dimensions = model_type.get_train_dataset(dataset_path, config)
-  
-    model = model_type.create_model(config, dimensions)
+    model = model_type.create_model(config)
 
     from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
 
@@ -312,7 +316,9 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs):
     model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='loss', verbose=1, 
                                                 save_freq=1000, save_best_only=False, mode='auto', save_weights_only=True)
 
-    _compile_model(model, config)
+    compile_model(model, config)
+    
+    train_dataset = model_type.get_train_dataset(dataset_path, config)
     training_history = model.fit(train_dataset, epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])
 
 @cli.command()
@@ -331,18 +337,18 @@ def evaluate(model_type, dataset_path, restoredir, config_filepath):
     if config_filepath is None:
         config_filepath = _MUSIC_RNN_DEFAULT_CONFIG
 
-    config = composer.config.get(config_filepath)
-    test_dataset, dimensions = model_type.get_test_dataset(dataset_path, config)
-    
-    model = model_type.create_model(config, dimensions)
-    _compile_model(model, config)
+    config = composer.config.get(config_filepath)  
+    model, dimensions = model_type.create_model(config, dimensions)
+
+    compile_model(model, config)
     model.load_weights(tf.train.latest_checkpoint(restoredir))
     model.build(input_shape=(config.train.batch_size, config.model.window_size, dimensions))
 
+    test_dataset = model_type.get_test_dataset(dataset_path, config)
     loss, accuracy = model.evaluate(test_dataset, verbose=0)
     logging.info('- Finished evaluating model. Loss: {:.4f}, Accuracy: {:.4f}'.format(loss, accuracy))
 
-@cli.comamnd()
+@cli.command()
 @click.argument('model-type', type=EnumType(ModelType, False))
 @click.argument('restoredir')
 @click.argument('output-filepath')

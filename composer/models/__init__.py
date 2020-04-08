@@ -62,8 +62,7 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
         vector, loading the dataset will take longer than compared to integer ids.
     :returns:
         A :class:`tensorflow.data.Dataset` object representing the dataset and 
-        a two-dimensional tuple of integers representing the dimensionsof a 
-        single feature and label in the dataset.
+        the dimensions of an event (single feature and label) in the dataset.
 
     '''
 
@@ -75,49 +74,25 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
 
         return event_ranges[event.type].start + (event.value or 0)
 
-    def _get_sequences_from_file(filepath, window_size, input_event_encoding):
+    def _get_events_from_file(filepath, input_event_encoding):
         '''
-        Gets all sequences (of size ``window_size``) from a file.
+        Gets all events from a file.
 
         :param filepath:
             A Path-like object representing the filepath of the encoded event sequence.
-        :param window_size:
-            The number of events in a single input sequence.
         :param input_event_encoding:
             The way that events should be encoded before being inputted into the network.
 
         '''
         
         if input_event_encoding == EventEncodingType.INTEGER:
-            data, event_value_ranges, event_ranges, sequence_settings = \
-                sequence.IntegerEncodedEventSequence.event_ids_from_file(filepath, as_numpy_array=True)
-            
+            data, _, _, _ = sequence.IntegerEncodedEventSequence.event_ids_from_file(filepath, as_numpy_array=True)
             data = data.reshape((len(data), 1))
         elif input_event_encoding == EventEncodingType.ONE_HOT:
-            data, event_value_ranges, event_ranges, sequence_settings = \
-                sequence.IntegerEncodedEventSequence.one_hot_from_file(filepath, as_numpy_array=True)
+            data, _, _, _ = sequence.IntegerEncodedEventSequence.one_hot_from_file(filepath, as_numpy_array=True)
         
-        # The number of events that we can extract from the sample.
-        # While every input sequence only contains window_size number of 
-        # events, we also need an additional event for the output (label).
-        # Therefore, we pull window_size + 1 events.
-        extract_events_count = window_size + 1
-        sequence_count = len(data) // extract_events_count
-        for i in range(sequence_count):
-            start, end = i * extract_events_count, extract_events_count * (i + 1)
-
-            if input_event_encoding == EventEncodingType.ONE_HOT:
-                x = data[start:end - 1]
-                y = data[end - 1]
-            else:
-                x = data[start:end - 1]
-
-                # We need to convert the event id to an Event object since it is
-                # required by OneHotEncodedEventSequence.event_as_one_hot_vector.
-                event = sequence.IntegerEncodedEventSequence.id_to_event(data[end - 1][0], event_ranges, event_value_ranges)
-                y = sequence.OneHotEncodedEventSequence.event_as_one_hot_vector(event, event_ranges, event_value_ranges, as_numpy_array=True)
-
-            yield x, y
+        for event in data:
+            yield event
 
     def _generator(filepaths, window_size):
             '''
@@ -128,20 +103,17 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
             for filepath in filepaths:
                 # TensorFlow automatically converts string arguments to bytes so we need to decode back to strings.
                 filepath = bytes(filepath).decode('utf-8')
-                for x, y in _get_sequences_from_file(filepath, window_size):
-                    yield x, y
+                for event in _get_events_from_file(filepath, window_size):
+                    yield event
 
     # To determine the input and output dimensions, we load up a file as if we were
     # loading it into the dataset object. We use its shape to determine the dimensions.
     # This has the disadvantage of requiring an extra (and unnecessary) load operation;
     # however, the advantage is we don't have to hard code our shapes reducing the potential
-    # points of error and thus making our code more maintainable. Besides, since 
-    # _get_sequences_from_file is a generator, we only have to decode window_size number of events.
-    example_sequence = next(_get_sequences_from_file(filepaths[0], window_size, input_event_encoding))
-    input_event_dimensions = example_sequence[0].shape[-1]
-    output_event_dimensions = example_sequence[1].shape[-1]
+    # points of error and thus making our code more maintainable.
+    _example = next(_get_events_from_file(filepaths[0], input_event_encoding))
+    event_dimensions = _example.shape[-1]
 
-    shuffle_buffer_size = 50 * batch_size
     if use_generator:
         # Convert filepaths to strings because TensorFlow cannot handle Pathlib objects.
         filepaths = [str(path) for path in filepaths]
@@ -149,12 +121,15 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
         # Create the TensorFlow dataset object
         dataset = tf.data.Dataset.from_generator(
             _generator,
-            output_types=(tf.float32, tf.float32),
-            output_shapes=((window_size, input_event_dimensions), (output_event_dimensions,)),
-            args=(filepaths, window_size, input_event_encoding)
+            output_types=(tf.float32,),
+            output_shapes=(event_dimensions,),
+            args=(filepaths, input_event_encoding)
         )
+
+        # We make the shuffle buffer big enough to fit 50 batches. After that, it will have to reshuffle.
+        shuffle_buffer_size = 50 * batch_size
     else:
-        _loader_func = lambda filepath: list(_get_sequences_from_file(filepath, window_size, input_event_encoding))
+        _loader_func = lambda filepath: list(_get_events_from_file(filepath, input_event_encoding))
         logging.info('- Loading dataset (\'{}\') into memory.'.format(filepaths[0].parent))
         data = parallel_process(filepaths, _loader_func, multithread=True, n_jobs=16,
                                 front_num=0, show_progress_bar=show_loading_progress_bar)
@@ -167,19 +142,26 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
 
         dataset = tf.data.Dataset.from_generator(
             lambda: data,
-            output_types=(tf.float32, tf.float32),
-            output_shapes=((window_size, input_event_dimensions), (output_event_dimensions,))
+            output_types=(tf.float32,),
+            output_shapes=(event_dimensions,)
         )
 
+        # Since all the data has been loaded into memory, we can make the shuffle buffer as large as we
+        # we want. In this case, we make it big enough to fit all the data. This will guarantee a good shuffle.
         shuffle_buffer_size = len(data) * 2
 
+    # Split our dataset into sequences.
+    # The input consists of window_size number of events, and the output consists of the same sequence but shifted
+    # over by one timestep. In other words, each event in the sequence represents one timestep, t, and the output is
+    # the event at the next timestep (t + 1). 
+    dataset = dataset.batch(window_size + 1, drop_remainder=True).map(lambda x: (x[:-1], x[1:]), 
+                            num_parallel_calls=tf.data.experimental.AUTOTUNE)
     # Apply shuffling and batching
-    dataset = dataset.shuffle(shuffle_buffer_size, reshuffle_each_iteration=True) \
-                     .batch(batch_size, drop_remainder=True)
+    dataset = dataset.shuffle(shuffle_buffer_size, reshuffle_each_iteration=True).batch(batch_size, drop_remainder=True)
 
     if use_generator:
         # We only need prefetching if all the data is NOT loaded into memory
         # (i.e. when we use a generator that loads as we go).
         dataset = dataset.prefetch(prefetch_buffer_size)
 
-    return dataset, (input_event_dimensions, output_event_dimensions)
+    return dataset, event_dimensions

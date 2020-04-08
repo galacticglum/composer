@@ -110,7 +110,7 @@ class ModelType(Enum):
             A :class:`composer.config.ConfigInstance` containing the configuration values.
         :param dimensions:
             A two-dimensional tuple of integers containing the input and output event dimensions;
-            that is, the dimensions of a single feature and the dimensions of a single label respectively.
+            that is, the dimensions of an event (a single feature and label).
         :param **kwargs:
             External data passed to the creation method (i.e. data not in the configuration file)
         :returns:
@@ -122,7 +122,7 @@ class ModelType(Enum):
             from composer import models
 
             return models.MusicRNN(
-                *dimensions, config.model.window_size, config.model.lstm_layers_count,
+                dimensions, config.model.window_size, config.model.lstm_layers_count,
                 config.model.lstm_layer_sizes, config.model.lstm_dropout_probability,
                 config.model.use_batch_normalization
             )
@@ -148,8 +148,7 @@ class ModelType(Enum):
             A :class:`composer.config.ConfigInstance` containing the configuration values.
         :returns:
             A :class:`tensorflow.data.Dataset` object representing the dataset and
-            a two-dimensional tuple of integers representing input and output dimensions
-            of the dataset (i.e. the dimensions of a single feature and label respectively).
+            the dimensions of an event (single feature and label) in the dataset.
         
         '''
 
@@ -167,7 +166,7 @@ class ModelType(Enum):
 
         # Creates the MusicRNNDataset.
         def _load_music_rnn_dataset():
-            dataset, dimensions = load_dataset(files, config.train.batch_size, config.model.window_size, input_event_encoding=EventEncodingType.ONE_HOT)
+            dataset, dimensions = load_dataset(files[:1], config.train.batch_size, config.model.window_size, input_event_encoding=EventEncodingType.ONE_HOT)
 
             return dataset, dimensions
 
@@ -190,8 +189,7 @@ class ModelType(Enum):
             A :class:`composer.config.ConfigInstance` containing the configuration values.
         :returns:
             A :class:`tensorflow.data.Dataset` object representing the training dataset and
-            a two-dimensional tuple of integers representing input and output dimensions
-            of the dataset (i.e. the dimensions of a single feature and label respectively).
+            the dimensions of an event (single feature and label) in the dataset.
         
         '''
 
@@ -208,8 +206,7 @@ class ModelType(Enum):
             A :class:`composer.config.ConfigInstance` containing the configuration values.
         :returns:
             A :class:`tensorflow.data.Dataset` object representing the testing dataset and
-            a two-dimensional tuple of integers representing input and output dimensions
-            of the dataset (i.e. the dimensions of a single feature and label respectively).
+            the dimensions of an event (single feature and label) in the dataset.
         
         '''
 
@@ -248,7 +245,7 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs):
     config = composer.config.get(config_filepath)
     train_dataset, dimensions = model_type.get_train_dataset(dataset_path, config)
   
-    # model = model_type.create_model(config, dimensions)
+    model = model_type.create_model(config, dimensions)
 
     # from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
 

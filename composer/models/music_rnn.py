@@ -19,7 +19,7 @@ class MusicRNN(Model):
         event-based sequence description.
     '''
 
-    def __init__(self, input_event_dimensions, output_event_dimensions, window_size, lstm_layers_count, 
+    def __init__(self, event_dimensions, window_size, lstm_layers_count, 
                  lstm_layer_sizes, lstm_dropout_probability, use_batch_normalization=True):
 
         '''
@@ -27,10 +27,8 @@ class MusicRNN(Model):
 
         :param input_event_dimensions:
             An integer denoting the dimensions of a single feature (i.e. the size of an event sequence).
-            The network takes in a sequence of these events and outputs an event denoting the next event in the sequence.
-        :param output_event_dimensions:
-            An integer denoting the dimensions of a single label (i.e. size of the output event sequence).
-            The network takes in a sequence of input events and outputs one of these events denoting the next event in the sequence.
+            The network takes in a sequence of these events and outputs an event in the form of a sequence
+            of the same size denoting the next event in the sequence.
         :param window_size:
             The number of events (input sequences) to use to predict.
         :param lstm_layers_count:
@@ -84,14 +82,14 @@ class MusicRNN(Model):
             # Time steps refers to how many input sequences there are, and sequence_length is the number of units in one
             # input sequence. In our case, since the input is a one-hot vector, a single input sequence is the size of
             # this vector. Time steps is the number of one-hot vectors that we are passing in.
-            self.lstm_layers.append(layers.LSTM(lstm_layer_sizes[i], input_shape=(window_size, input_event_dimensions), 
+            self.lstm_layers.append(layers.LSTM(lstm_layer_sizes[i], input_shape=(window_size, event_dimensions), 
                                     return_sequences=i < lstm_layers_count - 1))
             self.dropout_layers.append(layers.Dropout(lstm_dropout_probability[i]))
 
             if use_batch_normalization:
                 self.normalization_layers.append(layers.BatchNormalization())
 
-        self.output_layer = layers.Dense(output_event_dimensions, activation='softmax')
+        self.output_layer = layers.Dense(event_dimensions, activation='softmax')
 
     def call(self, inputs):
         '''

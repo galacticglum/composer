@@ -10,7 +10,7 @@ These instructions will get you a copy of the project up and running on your loc
 **Note:** The ``environment.yml`` file defines all the Python requirements—these are packages thatt will automatically be installed. This includes ``tensorflow-gpu`` which is what we recommend you use (as it will be tremendously faster than running on CPU); however, if you cannot run ``tensorflow-gpu``, remember to change to change this ``tensorflow``. Leave the version number the same.
 
 ### Automated Install
-We provide an automated installation script for Composer located in the ``scripts`` directory. If you are running on Mac OS X or Linux, this script is caled ``install_composer.sh``. If you are on Windows, it is called ``install_composer.bat``. 
+We provide an automated installation script for Composer located in the ``scripts`` directory. If you are running on Mac OS X or Linux, this script is called ``install_composer.sh``. If you are on Windows, it is called ``install_composer.bat``. 
 
 From the root project directory (this is important!), open a new terminal window and run the respective script for your platform:
 

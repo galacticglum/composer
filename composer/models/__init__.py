@@ -66,14 +66,6 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
 
     '''
 
-    def _encode_event_as_int(event, event_ranges):
-        '''
-        Encodes a :class:`composer.dataset.sequence.Event` as integer.
-
-        '''
-
-        return event_ranges[event.type].start + (event.value or 0)
-
     def _get_events_from_file(filepath, input_event_encoding):
         '''
         Gets all events from a file.

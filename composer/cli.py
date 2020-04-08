@@ -135,7 +135,7 @@ class ModelType(Enum):
 
         return function_map[self]()
         
-    def get_dataset(self, dataset_path, mode, config):
+    def get_dataset(self, dataset_path, mode, config, max_files=None, show_progress_bar=True):
         '''
         Loads a dataset for this :class:`ModelType` using the values 
         in the specified :class:`composer.config.ConfigInstance` object.
@@ -146,6 +146,12 @@ class ModelType(Enum):
             A string indicating the dataset mode: ``train`` or ``test``.
         :param config:
             A :class:`composer.config.ConfigInstance` containing the configuration values.
+        :param max_files:
+            The maximum number of files to load. Defaults to ``None`` which means that ALL
+            files will be loaded.
+        :param show_progress_bar:
+            Indicates whether a loading progress bar should be displayed while the dataset is loaded
+            into memory. Defaults to ``True``.
         :returns:
             A :class:`tensorflow.data.Dataset` object representing the dataset and
             the dimensions of an event (single feature and label) in the dataset.
@@ -165,8 +171,13 @@ class ModelType(Enum):
         files = list(dataset_path.glob('**/*.{}'.format(composer.dataset.preprocess._OUTPUT_EXTENSION)))
 
         # Creates the MusicRNNDataset.
-        def _load_music_rnn_dataset():
-            dataset, dimensions = load_dataset(files[:1], config.train.batch_size, config.model.window_size, input_event_encoding=EventEncodingType.ONE_HOT)
+        def _load_music_rnn_dataset(files):
+            if max_files is not None:
+                files = files[:max_files]
+
+            dataset, dimensions = load_dataset(files, config.train.batch_size, config.model.window_size, 
+                                                input_event_encoding=EventEncodingType.ONE_HOT, 
+                                                show_loading_progress_bar=show_progress_bar)
 
             return dataset, dimensions
 
@@ -176,9 +187,9 @@ class ModelType(Enum):
             ModelType.MUSIC_RNN: _load_music_rnn_dataset
         }
 
-        return function_map[self]()
+        return function_map[self](files)
 
-    def get_train_dataset(self, dataset_path, config):
+    def get_train_dataset(self, dataset_path, config, max_files=None, show_progress_bar=True):
         '''
         Loads the training dataset for this :class:`ModelType` using the values 
         in the specified :class:`composer.config.ConfigInstance` object.
@@ -187,15 +198,21 @@ class ModelType(Enum):
             The path to the preprocessed dataset organized into two subdirectories: train and test.
         :param config:
             A :class:`composer.config.ConfigInstance` containing the configuration values.
+        :param max_files:
+            The maximum number of files to load. Defaults to ``None`` which means that ALL
+            files will be loaded.
+        :param show_progress_bar:
+            Indicates whether a loading progress bar should be displayed while the dataset is loaded 
+            into memory. Defaults to ``True``.
         :returns:
             A :class:`tensorflow.data.Dataset` object representing the training dataset and
             the dimensions of an event (single feature and label) in the dataset.
         
         '''
 
-        return self.get_dataset(dataset_path, 'train', config)
+        return self.get_dataset(dataset_path, 'train', config, max_files, show_progress_bar)
 
-    def get_test_dataset(self, dataset_path, config):
+    def get_test_dataset(self, dataset_path, config, max_files=None, show_progress_bar=True):
         '''
         Loads the testing dataset for this :class:`ModelType` using the values 
         in the specified :class:`composer.config.ConfigInstance` object.
@@ -204,13 +221,19 @@ class ModelType(Enum):
             The path to the preprocessed dataset organized into two subdirectories: train and test.
         :param config:
             A :class:`composer.config.ConfigInstance` containing the configuration values.
+        :param max_files:
+            The maximum number of files to load. Defaults to ``None`` which means that ALL
+            files will be loaded.
+        :param show_progress_bar:
+            Indicates whether a loading progress bar should be displayed while the dataset is loaded 
+            into memory. Defaults to ``True``.
         :returns:
             A :class:`tensorflow.data.Dataset` object representing the testing dataset and
             the dimensions of an event (single feature and label) in the dataset.
         
         '''
 
-        return self.get_dataset(dataset_path, 'test', config)
+        return self.get_dataset(dataset_path, 'test', config, max_files, show_progress_bar)
 
 # The default configuration file for the MusicRNN model.
 _MUSIC_RNN_DEFAULT_CONFIG = Path(__file__).parent / 'music_rnn_config.yml'
@@ -225,6 +248,29 @@ def _compile_model(model, config):
 
     optimizer = optimizers.Adam(learning_rate=config.train.learning_rate)
     model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+
+@cli.command()
+@click.argument('model-type', type=EnumType(ModelType, False))
+@click.argument('dataset-path')
+@click.option('-c', '--config', 'config_filepath', default=None, 
+              help='The path to the model configuration file. If unspecified, uses the default config for the model.')
+def summary(model_type, dataset_path, config_filepath):
+    '''
+    Prints a summary of the model.
+
+    '''
+
+    if config_filepath is None:
+        config_filepath = _MUSIC_RNN_DEFAULT_CONFIG
+
+    config = composer.config.get(config_filepath)
+
+    # Load a single file from the dataset to get the dimensions
+    _, dimensions = model_type.get_train_dataset(dataset_path, config, max_files=1)
+  
+    model = model_type.create_model(config, dimensions)
+    model.build(input_shape=(config.train.batch_size, config.model.window_size, dimensions))
+    model.summary()
 
 @cli.command()
 @click.argument('model-type', type=EnumType(ModelType, False))

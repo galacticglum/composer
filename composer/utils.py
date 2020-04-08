@@ -36,7 +36,7 @@ def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3, 
         If ``True``, a ``ThreadPoolExecutor`` will be used rather than a ``ProcessPoolExecutor``.
         Defaults to ``False``.
     :param show_progress_bar:
-        Indicates whether a loading progress bar should be displayed while the process rns.
+        Indicates whether a loading progress bar should be displayed while the process runs.
         Defaults to ``True``.
     :returns:
         A list of the form [function(array[0]), function(array[1]), ...].

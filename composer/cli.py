@@ -390,8 +390,8 @@ def visualize_training(model_type, dataset_path, config_filepath, steps, decode_
     
     for index, (x, y) in enumerate(events):
         print('Step {}'.format(index))
-        print(' - input: {}'.format(x))
-        print(' - output: {}'.format(y))
+        print(' - input:             {}'.format(x))
+        print(' - expected output:   {}'.format(y))
 
 @cli.command()
 @click.argument('model-type', type=EnumType(ModelType, False))

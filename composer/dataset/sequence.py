@@ -145,6 +145,8 @@ class Event:
         
         return value if value != Event.NONE_VALUE else None
 
+    def __str__(self):
+        return '{}<{}>'.format(self.type.name, self.value)
 
     def __repr__(self):
         return 'Event(type={}, value={})'.format(str(self.type), self.value)

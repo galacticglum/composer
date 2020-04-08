@@ -372,8 +372,22 @@ def visualize_training(model_type, dataset_path, config_filepath, steps, decode_
 
                 events.append((x, y))
     
-    print('Input sequence: {}'.format(', '. join(str(x) for x, _ in events)))
-    print('Output sequence: {}'.format(', '. join(str(y) for _, y in events)))
+    input_header = 'Input sequence: '
+    input_sequence = ', '. join(str(x) for x, _ in events) 
+    output_header = 'Output sequence: '
+    output_sequence = ', '. join(str(y) for _, y in events)
+
+    divider_length = max(len(input_header) + len(input_sequence),  len(output_header) + len(output_sequence))
+    print('‾' * divider_length)
+
+    header_colourization = logging_utils.colourize_string('%s', logging_utils.colorama.Fore.GREEN)
+    print('{}{}'.format(header_colourization % input_header, input_sequence))
+    print('_' * divider_length)
+    print('‾' * divider_length)
+    print('{}{}'.format(header_colourization % output_header, output_sequence))
+
+    print('_' * divider_length)
+    
     for index, (x, y) in enumerate(events):
         print('Step {}'.format(index))
         print(' - input: {}'.format(x))

@@ -254,8 +254,17 @@ class ModelType(Enum):
 
         return self.get_dataset(dataset_path, 'test', config, max_files, show_progress_bar)
 
-# The default configuration file for the MusicRNN model.
-_MUSIC_RNN_DEFAULT_CONFIG = Path(__file__).parent / 'music_rnn_config.yml'
+def get_default_config(model_type):
+    '''
+    Gets the default configuration filepath for the specified :class:`ModelType`.
+
+    '''
+    
+    _FILEPATH_MAP = {
+        ModelType.MUSIC_RNN: Path(__file__).parent / 'music_rnn_config.yml'
+    }
+
+    return _FILEPATH_MAP[model_type] 
 
 def compile_model(model, config):
     '''
@@ -279,10 +288,7 @@ def summary(model_type, config_filepath):
 
     '''
 
-    if config_filepath is None:
-        config_filepath = _MUSIC_RNN_DEFAULT_CONFIG
-
-    config = composer.config.get(config_filepath)
+    config = composer.config.get(config_filepath or get_default_config(model_type))
 
     model, dimensions = model_type.create_model(config)
     model.build(input_shape=(config.train.batch_size, config.model.window_size, dimensions))
@@ -301,10 +307,7 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs):
 
     '''
 
-    if config_filepath is None:
-        config_filepath = _MUSIC_RNN_DEFAULT_CONFIG
-
-    config = composer.config.get(config_filepath)
+    config = composer.config.get(config_filepath or get_default_config(model_type))
     model = model_type.create_model(config)
 
     from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
@@ -334,10 +337,8 @@ def evaluate(model_type, dataset_path, restoredir, config_filepath):
     '''
 
     import tensorflow as tf
-    if config_filepath is None:
-        config_filepath = _MUSIC_RNN_DEFAULT_CONFIG
 
-    config = composer.config.get(config_filepath)  
+    config = composer.config.get(config_filepath or get_default_config(model_type))  
     model, dimensions = model_type.create_model(config, dimensions)
 
     compile_model(model, config)
@@ -361,9 +362,7 @@ def generate(model_type, restoredir, output_filepath, config_filepath):
     '''
 
     import tensorflow as tf
-    if config_filepath is None:
-        config_filepath = _MUSIC_RNN_DEFAULT_CONFIG
 
-    config = composer.config.get(config_filepath)
+    config = composer.config.get(config_filepath or get_default_config(model_type))
     # model = model_type.create_model
     pass

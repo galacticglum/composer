@@ -13,6 +13,7 @@ import composer.config
 import composer.logging_utils as logging_utils
 import composer.dataset.preprocess
 
+from shutil import copy2
 from pathlib import Path
 from enum import Enum, unique
 from composer.click_utils import EnumType
@@ -71,10 +72,7 @@ def preprocess(dataset_path, output_directory, num_workers, config_filepath,
 
     '''
 
-    if config_filepath is None:
-        config_filepath = _MUSIC_RNN_DEFAULT_CONFIG
-
-    config = composer.config.get(config_filepath)
+    config = composer.config.get(config_filepath or get_default_config(model_type))
     output_directory = Path(output_directory)
 
     if split:
@@ -95,11 +93,13 @@ def preprocess(dataset_path, output_directory, num_workers, config_filepath,
             'transform_percent': transform_percent,
             'split': split,
             'test_percent': test_percent,
-            'seed': int(np.random.get_state()[1][0]),
-            'config': config_filepath
+            'seed': int(np.random.get_state()[1][0])
         }
 
         json.dump(metadata, metadata_file, indent=True)
+    
+    # Copy the config file used to preprocess the dataset
+    copy2(config.filepath, output_directory / 'config.yml')
 
 def get_event_dimensions(config):
     '''
@@ -311,7 +311,9 @@ def summary(model_type, config_filepath):
 @click.option('--use-generator/--no-use-generator', default=False,
               help='Indicates whether the dataset should be loaded in chunks during processing ' +
               '(rather than into memory all at once). Defaults to False.')
-def train(model_type, dataset_path, logdir, config_filepath, epochs, use_generator):
+@click.option('--backup-config/--no-backup--config', default=True, help='Makes a copy of the configuration file used ' +
+              'in the model\'s output directory. Defaults to True.')
+def train(model_type, dataset_path, logdir, config_filepath, epochs, use_generator, backup_config):
     '''
     Trains the specified model.
 
@@ -324,6 +326,10 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs, use_generat
 
     model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
     model_checkpoint_path = model_logdir / 'model-{epoch:02d}-{loss:.2f}'
+
+    if backup_config:
+        model_logdir.mkdir(parents=True, exist_ok=True)
+        copy2(config.filepath, model_logdir / 'config.yml')
 
     tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq=25, profile_batch=0, write_graph=False, write_images=False)
     model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='loss', verbose=1, 

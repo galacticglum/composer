@@ -101,19 +101,53 @@ def preprocess(dataset_path, output_directory, num_workers, config_filepath,
     # Copy the config file used to preprocess the dataset
     copy2(config.filepath, output_directory / 'config.yml')
 
-def get_event_dimensions(config):
+def get_event_sequence_ranges(config):
     '''
-    Computes the dimension of a single event input in the network.
+    Gets the event sequence value ranges, dimensions, and ranges.
+
+    :param config:
+        A :class:`composer.config.ConfigInstance` containing the configuration values.
+    :returns:
+        The event value ranges, event dimensions, and event ranges.
 
     '''
-    
-    from composer.dataset.sequence import EventSequence, OneHotEncodedEventSequence
+
+    from composer.dataset.sequence import EventSequence
     event_value_ranges = EventSequence._compute_event_value_ranges(config.dataset.time_step_increment, \
-                                    config.dataset.max_time_steps, config.dataset.velocity_bins)
+                                        config.dataset.max_time_steps, config.dataset.velocity_bins)
     event_dimensions = EventSequence._compute_event_dimensions(event_value_ranges)
     event_ranges = EventSequence._compute_event_ranges(event_dimensions)
 
+    return event_value_ranges, event_dimensions, event_ranges
+
+def get_model_event_dimensions(config):
+    '''
+    Computes the dimension of a single event input in the network.
+
+    :param config:
+        A :class:`composer.config.ConfigInstance` containing the configuration values.
+    :returns:
+        The dimensions of an encoded event network input.
+
+    '''
+    
+    from composer.dataset.sequence import OneHotEncodedEventSequence
+    
+    _, _, event_ranges = get_event_sequence_ranges(config)
     return OneHotEncodedEventSequence.get_one_hot_size(event_ranges)
+
+def decode_to_event(config, encoded):
+    '''
+    Decodes an encoded event to a :class:`composer.dataset.sequence.Event`
+    based on the configuration values.
+
+    '''
+
+    from composer.dataset.sequence import OneHotEncodedEventSequence
+
+    event_value_ranges, event_dimensions, event_ranges = get_event_sequence_ranges(config)
+    return OneHotEncodedEventSequence.one_hot_vector_as_event(encoded, event_ranges, event_value_ranges)
+
 @unique
 class ModelType(Enum):
     '''
@@ -137,7 +171,7 @@ class ModelType(Enum):
             and the dimensions of an event (single feature and label) in the dataset.
         '''
 
-        dimensions = get_event_dimensions(config)
+        dimensions = get_model_event_dimensions(config)
 
         # Creates the MusicRNN model.
         def _create_music_rnn():
@@ -300,6 +334,50 @@ def summary(model_type, config_filepath):
     model, dimensions = model_type.create_model(config)
     model.build(input_shape=(config.train.batch_size, config.model.window_size, dimensions))
     model.summary()
+
+@cli.command()
+@click.argument('model-type', type=EnumType(ModelType, False))
+@click.argument('dataset-path')
+@click.option('-c', '--config', 'config_filepath', default=None, 
+              help='The path to the model configuration file. If unspecified, uses the default config for the model.')
+@click.option('--steps', default=5, help='The number of steps to visualize. Defaults to 5.')
+@click.option('--decode-events/-no-decode--events', default=True, help='Indicates whether the events should be decoded ' +
+              'or displayed as their raw values (i.e. as a one-hot vector or integer id).')
+def visualize_training(model_type, dataset_path, config_filepath, steps, decode_events):
+    '''
+    Visualize how the model will train. This displays the input and expected output (features and labels) for each step
+    given the dataset.
+
+    '''
+
+    config = composer.config.get(config_filepath or get_default_config(model_type))
+    dataset = model_type.get_train_dataset(dataset_path, config, max_files=1, show_progress_bar=False)
+
+    count = 0
+    events = []
+    if model_type == ModelType.MUSIC_RNN:
+        for batch_x, batch_y in dataset:
+            features = batch_x.numpy().reshape(-1, batch_x.shape[-1])
+            labels = batch_y.numpy().reshape(-1, batch_y.shape[-1])
+            
+            assert features.shape == labels.shape
+            for i in range(len(features)):
+                if count == steps: break
+                count += 1
+                
+                x, y = features[i], labels[i]
+                if decode_events:
+                    x = decode_to_event(config, x)
+                    y = decode_to_event(config, y)
+
+                events.append((x, y))
+    
+    print('Input sequence: {}'.format(', '. join(str(x) for x, _ in events)))
+    print('Output sequence: {}'.format(', '. join(str(y) for _, y in events)))
+    for index, (x, y) in enumerate(events):
+        print('Step {}'.format(index))
+        print(' - input: {}'.format(x))
+        print(' - output: {}'.format(y))
 
 @cli.command()
 @click.argument('model-type', type=EnumType(ModelType, False))

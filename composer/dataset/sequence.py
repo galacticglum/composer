@@ -1240,7 +1240,17 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
 
         '''
 
-        hot_index = vector.index(1)
+        if isinstance(vector, np.ndarray):
+            # np.where returns a tuple of arrays, one for each dimension.
+            # Vector has a single dimension and since it is a one-hot vector,
+            # the array will consist of a single element: the index of the "hot" bit.
+            hot_index = np.where(vector == 1)[0][0]
+        else:
+            if not isinstance(vector, list):
+                vector = list(vector)
+            
+            hot_index = vector.index(1)
+            
         for event_type, event_range in event_ranges.items():
             if hot_index in event_range: break
 

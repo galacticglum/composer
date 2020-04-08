@@ -389,7 +389,7 @@ def visualize_training(model_type, dataset_path, config_filepath, steps, decode_
     print('_' * divider_length)
     
     for index, (x, y) in enumerate(events):
-        print('Step {}'.format(index))
+        print('Step {}'.format(index + 1))
         print(' - input:             {}'.format(x))
         print(' - expected output:   {}'.format(y))
 

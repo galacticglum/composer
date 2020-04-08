@@ -3,11 +3,11 @@ import numpy as np
 import tensorflow as tf
 import composer.dataset.sequence as sequence
 
-from enum import Enum
+from enum import IntEnum
 from composer.utils import parallel_process
 from composer.models.music_rnn import MusicRNN
 
-class EventEncodingType(Enum):
+class EventEncodingType(IntEnum):
     '''
     The way that events should be encoded in a model.
     
@@ -86,10 +86,12 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
         '''
         
         if input_event_encoding == EventEncodingType.INTEGER:
-            data, _, _, _ = sequence.IntegerEncodedEventSequence.event_ids_from_file(filepath, as_numpy_array=True)
+            data, _, _, _ = sequence.IntegerEncodedEventSequence.event_ids_from_file(filepath, \
+                                as_numpy_array=True, numpy_dtype=np.float)
             data = data.reshape((len(data), 1))
         elif input_event_encoding == EventEncodingType.ONE_HOT:
-            data, _, _, _ = sequence.IntegerEncodedEventSequence.one_hot_from_file(filepath, as_numpy_array=True)
+            data, _, _, _ = sequence.IntegerEncodedEventSequence.one_hot_from_file(filepath, \
+                                as_numpy_array=True, numpy_dtype=np.float)
         
         for event in data:
             yield event
@@ -121,9 +123,9 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
         # Create the TensorFlow dataset object
         dataset = tf.data.Dataset.from_generator(
             _generator,
-            output_types=(tf.float32,),
+            output_types=tf.float32,
             output_shapes=(event_dimensions,),
-            args=(filepaths, input_event_encoding)
+            args=(filepaths, int(input_event_encoding))
         )
 
         # We make the shuffle buffer big enough to fit 50 batches. After that, it will have to reshuffle.
@@ -142,7 +144,7 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
 
         dataset = tf.data.Dataset.from_generator(
             lambda: data,
-            output_types=(tf.float32,),
+            output_types=tf.float32,
             output_shapes=(event_dimensions,)
         )
 

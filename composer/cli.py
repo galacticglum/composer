@@ -157,7 +157,7 @@ class ModelType(Enum):
 
         return function_map[self](), dimensions
         
-    def get_dataset(self, dataset_path, mode, config, max_files=None, show_progress_bar=True):
+    def get_dataset(self, dataset_path, mode, config, use_generator=False, max_files=None, show_progress_bar=True):
         '''
         Loads a dataset for this :class:`ModelType` using the values 
         in the specified :class:`composer.config.ConfigInstance` object.
@@ -168,6 +168,8 @@ class ModelType(Enum):
             A string indicating the dataset mode: ``train`` or ``test``.
         :param config:
             A :class:`composer.config.ConfigInstance` containing the configuration values.
+        :param use_generator:
+            Indicates whether the Dataset should be given as a generator object. Defaults to ``False``.
         :param max_files:
             The maximum number of files to load. Defaults to ``None`` which means that ALL
             files will be loaded.
@@ -198,7 +200,8 @@ class ModelType(Enum):
 
             dataset, _ = load_dataset(files, config.train.batch_size, config.model.window_size, 
                                                 input_event_encoding=EventEncodingType.ONE_HOT, 
-                                                show_loading_progress_bar=show_progress_bar)
+                                                show_loading_progress_bar=show_progress_bar,
+                                                use_generator=use_generator)
 
             return dataset
 
@@ -210,7 +213,7 @@ class ModelType(Enum):
 
         return function_map[self](files)
 
-    def get_train_dataset(self, dataset_path, config, max_files=None, show_progress_bar=True):
+    def get_train_dataset(self, dataset_path, config, use_generator=False, max_files=None, show_progress_bar=True):
         '''
         Loads the training dataset for this :class:`ModelType` using the values 
         in the specified :class:`composer.config.ConfigInstance` object.
@@ -219,6 +222,8 @@ class ModelType(Enum):
             The path to the preprocessed dataset organized into two subdirectories: train and test.
         :param config:
             A :class:`composer.config.ConfigInstance` containing the configuration values.
+        :param use_generator:
+            Indicates whether the Dataset should be given as a generator object. Defaults to ``False``.
         :param max_files:
             The maximum number of files to load. Defaults to ``None`` which means that ALL
             files will be loaded.
@@ -230,9 +235,9 @@ class ModelType(Enum):
         
         '''
 
-        return self.get_dataset(dataset_path, 'train', config, max_files, show_progress_bar)
+        return self.get_dataset(dataset_path, 'train', config, use_generator, max_files, show_progress_bar)
 
-    def get_test_dataset(self, dataset_path, config, max_files=None, show_progress_bar=True):
+    def get_test_dataset(self, dataset_path, config, use_generator=False, max_files=None, show_progress_bar=True):
         '''
         Loads the testing dataset for this :class:`ModelType` using the values 
         in the specified :class:`composer.config.ConfigInstance` object.
@@ -241,6 +246,8 @@ class ModelType(Enum):
             The path to the preprocessed dataset organized into two subdirectories: train and test.
         :param config:
             A :class:`composer.config.ConfigInstance` containing the configuration values.
+        :param use_generator:
+            Indicates whether the Dataset should be given as a generator object. Defaults to ``False``.
         :param max_files:
             The maximum number of files to load. Defaults to ``None`` which means that ALL
             files will be loaded.
@@ -252,7 +259,7 @@ class ModelType(Enum):
         
         '''
 
-        return self.get_dataset(dataset_path, 'test', config, max_files, show_progress_bar)
+        return self.get_dataset(dataset_path, 'test', config, use_generator, max_files, show_progress_bar)
 
 def get_default_config(model_type):
     '''
@@ -301,14 +308,17 @@ def summary(model_type, config_filepath):
 @click.option('-c', '--config', 'config_filepath', default=None, 
               help='The path to the model configuration file. If unspecified, uses the default config for the model.')
 @click.option('-e', '--epochs', 'epochs', default=10, help='The number of epochs to train for. Defaults to 10.')
-def train(model_type, dataset_path, logdir, config_filepath, epochs):
+@click.option('--use-generator/--no-use-generator', default=False,
+              help='Indicates whether the dataset should be loaded in chunks during processing ' +
+              '(rather than into memory all at once). Defaults to False.')
+def train(model_type, dataset_path, logdir, config_filepath, epochs, use_generator):
     '''
     Trains the specified model.
 
     '''
 
     config = composer.config.get(config_filepath or get_default_config(model_type))
-    model = model_type.create_model(config)
+    model, _ = model_type.create_model(config)
 
     from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
 
@@ -321,7 +331,7 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs):
 
     compile_model(model, config)
     
-    train_dataset = model_type.get_train_dataset(dataset_path, config)
+    train_dataset = model_type.get_train_dataset(dataset_path, config, use_generator)
     training_history = model.fit(train_dataset, epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])
 
 @cli.command()
@@ -330,7 +340,10 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs):
 @click.argument('restoredir')
 @click.option('-c', '--config', 'config_filepath', default=None, 
               help='The path to the model configuration file. If unspecified, uses the default config for the model.')
-def evaluate(model_type, dataset_path, restoredir, config_filepath):
+@click.option('--use-generator/--no-use-generator', default=False,
+              help='Indicates whether the dataset should be loaded in chunks during processing ' +
+              '(rather than into memory all at once). Defaults to False.')
+def evaluate(model_type, dataset_path, restoredir, config_filepath, use_generator):
     '''
     Evaluate the specified model.
 
@@ -345,7 +358,7 @@ def evaluate(model_type, dataset_path, restoredir, config_filepath):
     model.load_weights(tf.train.latest_checkpoint(restoredir))
     model.build(input_shape=(config.train.batch_size, config.model.window_size, dimensions))
 
-    test_dataset = model_type.get_test_dataset(dataset_path, config)
+    test_dataset = model_type.get_test_dataset(dataset_path, config, use_generator)
     loss, accuracy = model.evaluate(test_dataset, verbose=0)
     logging.info('- Finished evaluating model. Loss: {:.4f}, Accuracy: {:.4f}'.format(loss, accuracy))
 
@@ -355,6 +368,9 @@ def evaluate(model_type, dataset_path, restoredir, config_filepath):
 @click.argument('output-filepath')
 @click.option('-c', '--config', 'config_filepath', default=None, 
               help='The path to the model configuration file. If unspecified, uses the default config for the model.')
+@click.option('--prompt', '-p', 'prompt', default=None, help='The path of the MIDI file to prompt the network with. ' +
+              'Defaults to None, meaning a random prompt will be chosen.')
+@click.option('--length', '-l', 'generate_length', default=1024, help='The length of the generated event sequence. Defaults to 1024')
 def generate(model_type, restoredir, output_filepath, config_filepath):
     '''
     Generate a MIDI file.

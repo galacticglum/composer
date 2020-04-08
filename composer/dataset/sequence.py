@@ -1466,7 +1466,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
                 return Event(event_type, value)
 
     @classmethod
-    def event_ids_from_file(cls, filepath, as_numpy_array=False):
+    def event_ids_from_file(cls, filepath, as_numpy_array=False, numpy_dtype=np.int):
         '''
         Loads an :class:`IntegerEncodedEventSequence` from
         the specified filepath as single integer event ids.
@@ -1480,6 +1480,8 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
         :param as_numpy_array:
             Indicates whether the event ids should be returned as a numpy array.
             Defaults to ``False``.
+        :param numpy_dtype:
+            The data type of the numpy array (if ``as_numpy_array`` is ``True``). Defaults to ``np.int``.
         :returns:
             A list of integers representing the event ids, a ``collections.OrderedDict`` containing
             the event value ranges, a ``collections.OrderedDict`` representing the event ranges,
@@ -1503,7 +1505,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             # The number of events to encode.
             event_count = buffer_length // event_size
             if as_numpy_array:
-                event_ids = np.empty(event_count, dtype=np.int)
+                event_ids = np.empty(event_count, dtype=numpy_dtype)
             else:
                 event_ids = [0] * event_ids
             
@@ -1515,7 +1517,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             return event_ids, event_value_ranges, event_ranges, settings
 
     @classmethod
-    def one_hot_from_file(cls, filepath, as_numpy_array=False):
+    def one_hot_from_file(cls, filepath, as_numpy_array=False, numpy_dtype=np.int):
         '''
         Loads an :class:`IntegerEncodedEventSequence` from
         the specified filepath as one-hot vectors.
@@ -1537,6 +1539,8 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             Defaults to ``False``.
 
             Note: numpy array creation is much faster than Python lists.
+        :param numpy_dtype:
+            The data type of the numpy array (if ``as_numpy_array`` is ``True``). Defaults to ``np.int``.
         :returns:
             A list of one-hot vectors, a ``collections.OrderedDict`` containing the event value 
             ranges, a ``collections.OrderedDict`` representing the event ranges, and an additional 
@@ -1560,7 +1564,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             event_count = buffer_length // event_size
             vector_dimensions = OneHotEncodedEventSequence.get_one_hot_size(event_ranges)
             if as_numpy_array:
-                vectors = np.zeros((event_count, vector_dimensions), dtype=np.int)
+                vectors = np.zeros((event_count, vector_dimensions), dtype=numpy_dtype)
             else:
                 vectors = [[0] * vector_dimensions] * event_count
             

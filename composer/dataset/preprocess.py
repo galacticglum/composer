@@ -14,7 +14,8 @@ from composer.dataset.sequence import NoteSequence
 # The extension of preprocessed files.
 _OUTPUT_EXTENSION = 'data'
 
-def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.95, 1.05), pitch_shift_range=(-6, 6)):
+def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.95, 1.05), pitch_shift_range=(-6, 6),
+                 time_step_increment=10, max_time_steps=100, velocity_bins=32):
     '''
     Converts a music file to a set of sequences.
 
@@ -30,6 +31,15 @@ def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.9
         The range of the time stretch value. Defaults to up to 5% faster or slower (0.95 to 1.05).
     :param pitch_shift_range:
         The range of the pitch shift offset. Defaults to raising or lowering a sample by up to 6 pitch values (-6 to 6).
+    :param time_step_increment:
+        The number of milliseconds that a single step in time represents.
+        Defaults to 10 milliseconds (i.e. one step in time is 10 milliseconds).
+    :param max_time_steps:
+        The maximum number of time steps that a single event can shift time by.
+        Defaults to 100 (i.e. time shift can vary from 1 to 100 time steps).
+        If this is ``None``, there is no limit.
+    :param velocity_bins:
+        The number of bins to quantize the note velocity values into. Defaults to 32.
 
     '''
 
@@ -81,10 +91,12 @@ def _get_dataset_files(dataset_path):
     
     return filepaths
 
-def convert_all(dataset_path, output_path, transform, transform_percent, num_workers=16):
+def convert_all(config, dataset_path, output_path, transform, transform_percent, num_workers=16):
     '''
     Converts all music files in a dataset directory to a compact format readable by the Composer models.
 
+    :param config:
+        A :class:`composer.config.ConfigInstance` containing the configuration values.
     :param dataset_path:
         The path to the dataset directory.
     :param output_path:
@@ -113,13 +125,25 @@ def convert_all(dataset_path, output_path, transform, transform_percent, num_wor
             files_transform[filepaths[i]] = True
 
     # Run the convert_file method on each file in filepaths.
-    kwargs = [{'filepath': file, 'output_path': output_path, 'transform': files_transform[file]} for file in filepaths]
+    kwargs = [{
+        'filepath': file, 
+        'output_path': output_path, 
+        'transform': files_transform[file],
+        'time_stretch_range': (config.dataset.time_stretch_range.start, config.dataset.time_stretch_range.stop),
+        'pitch_shift_range': (config.dataset.pitch_shift_range.start, config.dataset.pitch_shift_range.stop),
+        'time_step_increment': config.dataset.time_step_increment,
+        'max_time_steps': config.dataset.max_time_steps,
+        'velocity_bins': config.dataset.velocity_bins
+    } for file in filepaths]
+
     parallel_process(kwargs, convert_file, use_kwargs=True)
 
 def split_dataset(dataset_path, root_outpath_directory, test_percent, transform, transform_percent, num_workers=16):
     '''
     Splits all music files in a dataset directory into a training and testing set based on the specified ratio.
 
+    :param config:
+        A :class:`composer.config.ConfigInstance` containing the configuration values.
     :param dataset_path:
         The path to the dataset directory.
     :param root_outpath_directory:

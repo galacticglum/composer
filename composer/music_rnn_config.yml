@@ -3,6 +3,16 @@
 # DO NOT MODIFY THIS FILE! If you'd like to modify the configuration,
 # duplicate this file and specify a custom configuration flag in the CLI.
 
+dataset:
+    time_step_increment: 10
+    max_time_steps: 100
+    velocity_bins: 32
+    time_stretch_range:
+        - start: 0.95
+        - stop: 1.05
+    pitch_shift_range:
+        - start: -6
+        - stop: 6
 model:
     window_size: 200
     lstm_layers_count: 3

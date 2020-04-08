@@ -54,6 +54,8 @@ def cli(ctx, verbosity, seed):
 @click.argument('dataset-path')
 @click.argument('output-directory')
 @click.option('--num-workers', '-w', default=16, help='The number of worker threads to spawn. Defaults to 16.')
+@click.option('-c', '--config', 'config_filepath', default=None, 
+              help='The path to the model configuration file. If unspecified, uses the default config for the model.')
 @click.option('--transform/--no-transform', default=False, help='Indicates whether the dataset should be transformed. ' +
               'If true, a percentage of the dataset is duplicated and pitch shifted and/or time-stretched. Defaults to False.\n' +
               'Note: transforming a single sample produces three new samples: a pitch shifted one, time stretched one, and one with ' +
@@ -62,22 +64,28 @@ def cli(ctx, verbosity, seed):
 @click.option('--split/--no-split', default=True, help='Indicates whether the dataset should be split into train and test sets. Defaults to True.')
 @click.option('--test-percent', default=0.30, help='The percentage of the dataset that is allocated to testing. Defaults to 30%%')
 @click.option('--metadata/--no-metadata', 'output_metadata', default=True, help='Indicates whether to output metadata. Defaults to True.')
-def preprocess(dataset_path, output_directory, num_workers, transform, transform_percent, split, test_percent, output_metadata):
+def preprocess(dataset_path, output_directory, num_workers, config_filepath,
+               transform, transform_percent, split, test_percent, output_metadata):
     '''
     Preprocesses a raw dataset so that it can be used by the models.
 
     '''
 
+    if config_filepath is None:
+        config_filepath = _MUSIC_RNN_DEFAULT_CONFIG
+
+    config = composer.config.get(config_filepath)
     output_directory = Path(output_directory)
 
     if split:
-        composer.dataset.preprocess.split_dataset(dataset_path, output_directory, test_percent, transform, transform_percent, num_workers)
+        composer.dataset.preprocess.split_dataset(config, dataset_path, output_directory, test_percent, 
+                                                  transform, transform_percent, num_workers)
     else:
-        composer.dataset.preprocess.convert_all(dataset_path, output_directory, num_workers)
+        composer.dataset.preprocess.convert_all(config, dataset_path, output_directory, num_workers)
 
     if not output_metadata: return
     with open(output_directory / 'metadata.json', 'w+') as metadata_file:
-        # The metadata file is more or less a dump of the settings used to preprocess the dataset.
+        # The metadata file is a dump of the settings used to preprocess the dataset.
         metadata = {
             'local_time': str(datetime.datetime.now()),
             'utc_time': str(datetime.datetime.utcnow()),
@@ -87,7 +95,8 @@ def preprocess(dataset_path, output_directory, num_workers, transform, transform
             'transform_percent': transform_percent,
             'split': split,
             'test_percent': test_percent,
-            'seed': int(np.random.get_state()[1][0])
+            'seed': int(np.random.get_state()[1][0]),
+            'config': config_filepath
         }
 
         json.dump(metadata, metadata_file, indent=True)
@@ -244,10 +253,11 @@ def _compile_model(model, config):
 
     '''
 
-    from tensorflow.keras import optimizers
+    from tensorflow.keras import optimizers, losses
 
+    loss = losses.CategoricalCrossentropy(from_logits=True)
     optimizer = optimizers.Adam(learning_rate=config.train.learning_rate)
-    model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+    model.compile(loss=loss, optimizer=optimizer, metrics=['accuracy'])
 
 @cli.command()
 @click.argument('model-type', type=EnumType(ModelType, False))
@@ -266,7 +276,7 @@ def summary(model_type, dataset_path, config_filepath):
     config = composer.config.get(config_filepath)
 
     # Load a single file from the dataset to get the dimensions
-    _, dimensions = model_type.get_train_dataset(dataset_path, config, max_files=1)
+    _, dimensions = model_type.get_train_dataset(dataset_path, config, max_files=1, show_progress_bar=False)
   
     model = model_type.create_model(config, dimensions)
     model.build(input_shape=(config.train.batch_size, config.model.window_size, dimensions))
@@ -293,17 +303,17 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs):
   
     model = model_type.create_model(config, dimensions)
 
-    # from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
+    from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
 
-    # model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
-    # model_checkpoint_path = model_logdir / 'model-{epoch:02d}-{loss:.2f}.h5'
+    model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+    model_checkpoint_path = model_logdir / 'model-{epoch:02d}-{loss:.2f}'
 
-    # tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq=25, profile_batch=0, write_graph=False, write_images=False)
-    # model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='loss', verbose=1, 
-    #                                             save_freq=1000, save_best_only=False, mode='auto', save_weights_only=True)
+    tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq=25, profile_batch=0, write_graph=False, write_images=False)
+    model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='loss', verbose=1, 
+                                                save_freq=1000, save_best_only=False, mode='auto', save_weights_only=True)
 
-    # _compile_model(model, config)
-    # training_history = model.fit(train_dataset, epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])
+    _compile_model(model, config)
+    training_history = model.fit(train_dataset, epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])
 
 @cli.command()
 @click.argument('model-type', type=EnumType(ModelType, False))
@@ -317,6 +327,7 @@ def evaluate(model_type, dataset_path, restoredir, config_filepath):
 
     '''
 
+    import tensorflow as tf
     if config_filepath is None:
         config_filepath = _MUSIC_RNN_DEFAULT_CONFIG
 
@@ -325,8 +336,28 @@ def evaluate(model_type, dataset_path, restoredir, config_filepath):
     
     model = model_type.create_model(config, dimensions)
     _compile_model(model, config)
-    model.build(input_shape=(config.train.batch_size, config.model.window_size, dimensions[0]))
-    model.load_weights(restoredir)
+    model.load_weights(tf.train.latest_checkpoint(restoredir))
+    model.build(input_shape=(config.train.batch_size, config.model.window_size, dimensions))
 
     loss, accuracy = model.evaluate(test_dataset, verbose=0)
     logging.info('- Finished evaluating model. Loss: {:.4f}, Accuracy: {:.4f}'.format(loss, accuracy))
+
+@cli.comamnd()
+@click.argument('model-type', type=EnumType(ModelType, False))
+@click.argument('restoredir')
+@click.argument('output-filepath')
+@click.option('-c', '--config', 'config_filepath', default=None, 
+              help='The path to the model configuration file. If unspecified, uses the default config for the model.')
+def generate(model_type, restoredir, output_filepath, config_filepath):
+    '''
+    Generate a MIDI file.
+
+    '''
+
+    import tensorflow as tf
+    if config_filepath is None:
+        config_filepath = _MUSIC_RNN_DEFAULT_CONFIG
+
+    config = composer.config.get(config_filepath)
+    # model = model_type.create_model
+    pass

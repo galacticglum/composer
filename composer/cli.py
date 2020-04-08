@@ -3,6 +3,7 @@ The command-line interface for Composer.
 
 '''
 
+import re
 import time
 import json
 import click
@@ -397,6 +398,7 @@ def visualize_training(model_type, dataset_path, config_filepath, steps, decode_
 @click.argument('model-type', type=EnumType(ModelType, False))
 @click.argument('dataset-path')
 @click.option('--logdir', default='./output/logdir/', help='The root log directory. Defaults to \'./output/logdir\'.')
+@click.option('--restoredir', default=None, type=str, help='The directory of the model to continue training.')
 @click.option('-c', '--config', 'config_filepath', default=None, 
               help='The path to the model configuration file. If unspecified, uses the default config for the model.')
 @click.option('-e', '--epochs', 'epochs', default=10, help='The number of epochs to train for. Defaults to 10.')
@@ -407,32 +409,55 @@ def visualize_training(model_type, dataset_path, config_filepath, steps, decode_
               'in the model\'s output directory. Defaults to True.')
 @click.option('--max-files', default=None, help='The maximum number of files to load. Defaults to None, which means  ' + 
               'that ALL files will be loaded.', type=int)
-def train(model_type, dataset_path, logdir, config_filepath, epochs, use_generator, backup_config, max_files):
+@click.option('--save-freq', default=1000, help='The frequency at which to save the model. This can be \'epoch\' or integer. ' +
+              'When using \'epoch\', the model will be saved every epoch; otherwise, it saves after the specified number of batches. ' +
+              'Defaults to \'epoch\'. To set the epoch save period, use the \'epoch-save-period\' option.', type=str)
+@click.option('--epoch-save-period', default=1, help='This value indicates the frequency, in epochs, that the model is saved. ' +
+              'For example, if set to 10, the model will be saved every 10 epochs. Defaults to 1.', type=int)
+def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs, 
+          use_generator, backup_config, max_files, save_freq, epoch_save_period):
     '''
     Trains the specified model.
 
     '''
 
-    config = composer.config.get(config_filepath or get_default_config(model_type))
-    model, _ = model_type.create_model(config)
-
+    import tensorflow as tf
     from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
 
-    model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
-    model_checkpoint_path = model_logdir / 'model-{epoch:02d}-{loss:.2f}'
+    config = composer.config.get(config_filepath or get_default_config(model_type))
+    model, _ = model_type.create_model(config)
+    compile_model(model, config)
 
-    if backup_config:
-        model_logdir.mkdir(parents=True, exist_ok=True)
-        copy2(config.filepath, model_logdir / 'config.yml')
+
+    if restoredir is not None:
+        checkpoint = tf.train.latest_checkpoint(restoredir)
+        if checkpoint is None:
+            logging.warn('Failed to load model checkpoint from \'{}\'.'.format(restoredir))
+            exit(1)
+
+        model.load_weights(checkpoint)
+        model_logdir = Path(restoredir)
+
+        initial_epoch = int(re.search(r'(?<=model-)(.*)(?=-)', str(checkpoint)).group(0))
+    else:
+        initial_epoch = 0
+        model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+        if backup_config:
+            model_logdir.mkdir(parents=True, exist_ok=True)
+            copy2(config.filepath, model_logdir / 'config.yml')
 
     tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq=25, profile_batch=0, write_graph=False, write_images=False)
-    model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='loss', verbose=1, 
-                                                save_freq=1000, save_best_only=False, mode='auto', save_weights_only=True)
+    model_checkpoint_path = model_logdir / 'model-{epoch:02d}-{loss:.2f}'
 
-    compile_model(model, config)
-    
+    is_epoch_save_freq = not save_freq.isdigit()
+    model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='loss', verbose=1, 
+                                                save_freq='epoch' if is_epoch_save_freq else int(save_freq),
+                                                period=epoch_save_period if is_epoch_save_freq else None, 
+                                                save_best_only=False, mode='auto', save_weights_only=True,)
+
     train_dataset = model_type.get_train_dataset(dataset_path, config, use_generator, max_files=max_files)
-    training_history = model.fit(train_dataset, epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])
+    training_history = model.fit(train_dataset, epochs=epochs + initial_epoch, initial_epoch=initial_epoch,
+                                 callbacks=[tensorboard_callback, model_checkpoint_callback])
 
 @cli.command()
 @click.argument('model-type', type=EnumType(ModelType, False))

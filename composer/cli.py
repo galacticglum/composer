@@ -153,6 +153,8 @@ class ModelType(Enum):
         
         '''
 
+        from composer.models import load_dataset, EventEncodingType
+
         if mode not in ['train', 'test']:
             raise InvalidParameterError('\'{}\' is an invalid dataset mode! Must be one of: \'train\', \'test\'.'.format(mode))
 
@@ -165,8 +167,7 @@ class ModelType(Enum):
 
         # Creates the MusicRNNDataset.
         def _load_music_rnn_dataset():
-            from composer.models.music_rnn import create_music_rnn_dataset
-            dataset, dimensions = create_music_rnn_dataset(files, config.train.batch_size, config.model.window_size)
+            dataset, dimensions = load_dataset(files, config.train.batch_size, config.model.window_size, input_event_encoding=EventEncodingType.ONE_HOT)
 
             return dataset, dimensions
 
@@ -247,19 +248,19 @@ def train(model_type, dataset_path, logdir, config_filepath, epochs):
     config = composer.config.get(config_filepath)
     train_dataset, dimensions = model_type.get_train_dataset(dataset_path, config)
   
-    model = model_type.create_model(config, dimensions)
+    # model = model_type.create_model(config, dimensions)
 
-    from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
+    # from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
 
-    model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
-    model_checkpoint_path = model_logdir / 'model-{epoch:02d}-{loss:.2f}.h5'
+    # model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+    # model_checkpoint_path = model_logdir / 'model-{epoch:02d}-{loss:.2f}.h5'
 
-    tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq=25, profile_batch=0, write_graph=False, write_images=False)
-    model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='loss', verbose=1, 
-                                                save_freq=1000, save_best_only=False, mode='auto', save_weights_only=True)
+    # tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq=25, profile_batch=0, write_graph=False, write_images=False)
+    # model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='loss', verbose=1, 
+    #                                             save_freq=1000, save_best_only=False, mode='auto', save_weights_only=True)
 
-    _compile_model(model, config)
-    training_history = model.fit(train_dataset, epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])
+    # _compile_model(model, config)
+    # training_history = model.fit(train_dataset, epochs=epochs, callbacks=[tensorboard_callback, model_checkpoint_callback])
 
 @cli.command()
 @click.argument('model-type', type=EnumType(ModelType, False))

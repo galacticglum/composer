@@ -754,9 +754,15 @@ class EventSequence:
         sustain_periods = []
         for event in self.events:
             if event.type == EventType.NOTE_ON:
+                # Check if the note is already on. In this case, we skip this event.
+                if event.value in current_notes and current_notes[event.value] is not None: continue
+
                 # We use zero as a placeholder value here since we don't know the end time yet.
                 current_notes[event.value] = Note(current_time, 0, event.value, current_velocity)
             elif event.type == EventType.NOTE_OFF:
+                # Check if the note is already off. In this case, we skip this event.
+                if event.value not in current_notes or current_notes[event.value] is None: continue
+
                 note = current_notes[event.value]
                 note.end = current_time
                 notes.append(note)
@@ -772,9 +778,15 @@ class EventSequence:
                 # Of course, since we are quantizing these values, we will lose some precision.
                 current_velocity = (128 * event.value) // self.velocity_bins 
             elif event.type == EventType.SUSTAIN_ON:
+                # Make sure we don't already have a sustain period active.
+                if current_sustain_period is not None: continue
+
                 # We use zero as a placeholder value here since we don't know the end time yet.
                 current_sustain_period = SustainPeriod(current_time, 0)
             elif event.type == EventType.SUSTAIN_OFF:
+                # Make sure a sustain period is actually active.
+                if current_sustain_period is None: continue
+
                 current_sustain_period.end = current_time
                 sustain_periods.append(current_sustain_period)
 
@@ -1195,7 +1207,7 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
         return 9223372036854775806
 
     @classmethod
-    def event_as_one_hot_vector(cls, event, event_ranges, event_value_ranges, as_numpy_array=False):
+    def event_as_one_hot_vector(cls, event, event_ranges, event_value_ranges, as_numpy_array=False, numpy_dtype=np.int):
         '''
         Converts an :class:`Event` to a one-hot vector.
 
@@ -1207,6 +1219,8 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
             The range of values for each :class:`EventType`.
         :param as_numpy_array:
             Indicates whether a numpy array should be returned. Defaults to ``False``.
+        :param numpy_dtype:
+            The data type of the numpy array (if ``as_numpy_array`` is ``True``). Defaults to ``np.int``.
         :returns:
             An array-like object of integers (consisting of either 0 or 1) 
             representing the event as a one-hot vector.
@@ -1214,7 +1228,7 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
         '''
 
         if as_numpy_array:
-            vector = np.zeros(cls.get_one_hot_size(event_ranges), dtype=np.int)
+            vector = np.zeros(cls.get_one_hot_size(event_ranges), dtype=numpy_dtype)
         else:
             vector = [0] * cls.get_one_hot_size(event_ranges)
 

@@ -4,6 +4,7 @@ The command-line interface for Composer.
 '''
 
 import re
+import tqdm
 import time
 import json
 import click
@@ -19,6 +20,7 @@ from pathlib import Path
 from enum import Enum, unique
 from composer.click_utils import EnumType
 from composer.exceptions import DatasetError, InvalidParameterError
+from composer.dataset.sequence import NoteSequence, EventSequence, OneHotEncodedEventSequence
 
 def _set_verbosity_level(logger, value):
     '''
@@ -496,9 +498,12 @@ def evaluate(model_type, dataset_path, restoredir, config_filepath, use_generato
 @click.option('-c', '--config', 'config_filepath', default=None, 
               help='The path to the model configuration file. If unspecified, uses the default config for the model.')
 @click.option('--prompt', '-p', 'prompt', default=None, help='The path of the MIDI file to prompt the network with. ' +
-              'Defaults to None, meaning a random prompt will be chosen.')
+              'Defaults to None, meaning a random prompt will be created.')
+@click.option('--prompt-length', default=10, help='Number of events to take from the start of the prompt. Defaults to 10.')
 @click.option('--length', '-l', 'generate_length', default=1024, help='The length of the generated event sequence. Defaults to 1024')
-def generate(model_type, restoredir, output_filepath, config_filepath):
+@click.option('--temperature', default=1.0, help='Dictates how random the result is. Low temperature yields more predictable output. ' +
+              'On the other hand, high temperature yields very random ("surprising") outputs. Defaults to 1.0.')
+def generate(model_type, restoredir, output_filepath, config_filepath, prompt, prompt_length, generate_length, temperature):
     '''
     Generate a MIDI file.
 
@@ -507,5 +512,46 @@ def generate(model_type, restoredir, output_filepath, config_filepath):
     import tensorflow as tf
 
     config = composer.config.get(config_filepath or get_default_config(model_type))
-    # model = model_type.create_model
-    pass
+    model, dimensions = model_type.create_model(config)
+    
+    compile_model(model, config)
+    model.load_weights(tf.train.latest_checkpoint(restoredir))
+    model.build(input_shape=(1, prompt_length, dimensions))
+
+    if prompt is None:
+        raise NotImplementedError()
+
+    event_sequence = NoteSequence.from_midi(prompt).to_event_sequence(config.dataset.time_step_increment, \
+                config.dataset.max_time_steps, config.dataset.velocity_bins)
+
+    event_sequence.events = event_sequence.events[:prompt_length]
+
+    def _encode(event):
+        return OneHotEncodedEventSequence.event_as_one_hot_vector(event, event_sequence.event_ranges, \
+                    event_sequence.event_value_ranges, as_numpy_array=True, numpy_dtype=np.float)
+
+    def _decode(vector):
+        return OneHotEncodedEventSequence.one_hot_vector_as_event(vector, event_sequence.event_ranges, \
+                    event_sequence.event_value_ranges)
+
+    x = [_encode(event) for event in event_sequence.events]
+    x = tf.expand_dims(x, 0)
+    
+    vector_size = OneHotEncodedEventSequence.get_one_hot_size(event_sequence.event_ranges)
+    model.reset_states()
+    for i in tqdm.tqdm(range(generate_length)):
+        predictions = model(x)
+        predictions = tf.squeeze(predictions, 0)
+        predictions = predictions / temperature
+
+        predicted_id = tf.random.categorical(predictions, num_samples=1)[-1, 0].numpy()
+
+        predicted_vector = np.zeros(vector_size)
+        predicted_vector[predicted_id] = 1
+
+        x = tf.expand_dims([predicted_vector], 0)
+        event_sequence.events.append(_decode(predicted_vector))
+
+    output_filepath = Path(output_filepath)
+    output_filepath.parent.mkdir(parents=True, exist_ok=True)
+    event_sequence.to_note_sequence().to_midi(str(output_filepath))

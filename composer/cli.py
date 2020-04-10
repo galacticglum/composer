@@ -64,7 +64,7 @@ def cli(ctx, verbosity, seed):
               'If true, a percentage of the dataset is duplicated and pitch shifted and/or time-stretched. Defaults to False.\n' +
               'Note: transforming a single sample produces three new samples: a pitch shifted one, time stretched one, and one with ' +
               'a combination of both. A transform percent value of 5%% means that the dataset will GROW by 3 times 5%% of the total size.')
-@click.option('--transform-percent', default=0.50, help='The percentage of the dataset that should be transformed. Defaults to 50%% of the dataset.')
+@click.option('--transform-percent', default=1.0, help='The percentage of the dataset that should be transformed. Defaults to 100%% of the dataset.')
 @click.option('--split/--no-split', default=True, help='Indicates whether the dataset should be split into train and test sets. Defaults to True.')
 @click.option('--test-percent', default=0.30, help='The percentage of the dataset that is allocated to testing. Defaults to 30%%')
 @click.option('--metadata/--no-metadata', 'output_metadata', default=True, help='Indicates whether to output metadata. Defaults to True.')

@@ -60,6 +60,9 @@ def cli(ctx, verbosity, seed):
 @click.option('--num-workers', '-w', default=16, help='The number of worker threads to spawn. Defaults to 16.')
 @click.option('-c', '--config', 'config_filepath', default=None, 
               help='The path to the model configuration file. If unspecified, uses the default config for the model.')
+@click.option('--sustain-period-encode-mode', '-spe', default=NoteSequence.SustainPeriodEncodeMode.EXTEND, 
+              type=EnumType(NoteSequence.SustainPeriodEncodeMode, False), help='The way in which sustain periods should be encoded. ' +
+              'Defaults to EXTEND.\n\nRefer to NoteSequence.to_event_sequence documentation for more details on this parameter.')
 @click.option('--transform/--no-transform', default=False, help='Indicates whether the dataset should be transformed. ' +
               'If true, a percentage of the dataset is duplicated and pitch shifted and/or time-stretched. Defaults to False.\n' +
               'Note: transforming a single sample produces many new samples: one for each pitch in the pitch shift range, and a time' +

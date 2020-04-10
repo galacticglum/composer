@@ -502,18 +502,15 @@ class NoteSequence:
                     remove_queue.append(i)
 
                 # If the current event is a NOTE_OFF event, check if the one preceeding it
-                # was a NOTE_ON event. If it is, we should remove both events since it is
-                # useless to turn on a note just to turn it off right after.
-                # 
-                # Remember:
-                #   Since we are iterating over the list BACKWARDS, we are checking this
-                #   in backwards order as well (i.e. NOTE_OFF and then NOTE_ON as opposed
-                #   to the opposite direction; however, that is actually what we are filtering).
-                if event.type == EventType.NOTE_OFF and i - 1 >= 0 and events[i - 1].type == EventType.NOTE_ON:
+                # was a NOTE_ON event (or vice-versa) If it is, we should remove both events 
+                # since it is useless to turn on a note just to turn it off right after
+                # (or to turn off a note just to turn it back on).
+                if event.type == EventType.NOTE_OFF and i - 1 >= 0 and events[i - 1].type == EventType.NOTE_ON or \
+                   event.type == EventType.NOTE_ON and i - 1 >= 0 and events[i - 1].type == EventType.NOTE_OFF:
                     # Make sure the notes are of the same pitch!
-                    # It's perfectly okay (and normal!) for there to be a NOTE_ON and NOTE_OFF directly after one another
-                    # so long as these events are referencing different notes. It is only a problem when we are turning
-                    # off a note with the same pitch directly after turning it on...
+                    # It's perfectly okay (and normal!) for there to be a NOTE_ON and NOTE_OFF (or vice-versa) directly 
+                    # after one another so long as these events are referencing different notes. It is only a problem 
+                    # when we are turning off a note with the same pitch directly after turning it on...
                     if event.value == events[i - 1].value:
                         remove_queue.append(i)
                         remove_queue.append(i - 1)

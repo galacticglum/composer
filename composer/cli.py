@@ -62,8 +62,8 @@ def cli(ctx, verbosity, seed):
               help='The path to the model configuration file. If unspecified, uses the default config for the model.')
 @click.option('--transform/--no-transform', default=False, help='Indicates whether the dataset should be transformed. ' +
               'If true, a percentage of the dataset is duplicated and pitch shifted and/or time-stretched. Defaults to False.\n' +
-              'Note: transforming a single sample produces three new samples: a pitch shifted one, time stretched one, and one with ' +
-              'a combination of both. A transform percent value of 5%% means that the dataset will GROW by 3 times 5%% of the total size.')
+              'Note: transforming a single sample produces many new samples: one for each pitch in the pitch shift range, and a time' +
+              'stretched one (uniformly sampled from the time stretch range).')
 @click.option('--transform-percent', default=1.0, help='The percentage of the dataset that should be transformed. Defaults to 100%% of the dataset.')
 @click.option('--split/--no-split', default=True, help='Indicates whether the dataset should be split into train and test sets. Defaults to True.')
 @click.option('--test-percent', default=0.30, help='The percentage of the dataset that is allocated to testing. Defaults to 30%%')

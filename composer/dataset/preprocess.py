@@ -14,7 +14,7 @@ from composer.dataset.sequence import NoteSequence
 # The extension of preprocessed files.
 _OUTPUT_EXTENSION = 'data'
 
-def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.95, 1.05), pitch_shift_range=(-6, 6),
+def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.90, 1.10), pitch_shift_range=(-4, 4),
                  time_step_increment=10, max_time_steps=100, velocity_bins=32):
     '''
     Converts a music file to a set of sequences.
@@ -28,9 +28,9 @@ def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.9
         one where the original sample is time stretched, pitched shifted, and a combination of both respectively.
         Defaults to ``False``.
     :param time_stretch_range:
-        The range of the time stretch value. Defaults to up to 5% faster or slower (0.95 to 1.05).
+        The range of the time stretch value. Defaults to up to 10% faster or slower (0.90 to 1.10).
     :param pitch_shift_range:
-        The range of the pitch shift offset. Defaults to raising or lowering a sample by up to 6 pitch values (-6 to 6).
+        The range of the pitch shift offset. Defaults to raising or lowering a sample by up to 4 pitch values (-4 to 4).
     :param time_step_increment:
         The number of milliseconds that a single step in time represents.
         Defaults to 10 milliseconds (i.e. one step in time is 10 milliseconds).
@@ -55,14 +55,13 @@ def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.9
 
     if transform:
         # Convenience functions for calculating pitch shift and time stretch 
-        _get_pitch_shift = lambda: np.random.randint(*pitch_shift_range)
         _get_time_stretch = lambda: np.random.uniform(*time_stretch_range)
 
-        transformed_note_sequences = [
-            note_sequence.pitch_shift(_get_pitch_shift(), inplace=False),
-            note_sequence.time_stretch(_get_time_stretch(), inplace=False),
-            note_sequence.pitch_shift(_get_pitch_shift(), inplace=False).time_stretch(_get_time_stretch())
-        ]
+        transformed_note_sequences = []
+        for pitch_shift in range(pitch_shift_range[0], pitch_shift_range[1] + 1):
+            transformed_note_sequences.append(note_sequence.pitch_shift(pitch_shift), inplace=False)
+            
+        transformed_note_sequences.append(note_sequence.time_stretch(_get_time_stretch(), inplace=False))
         
         # Output sequences
         for index, transformed_sequence in enumerate(transformed_note_sequences):

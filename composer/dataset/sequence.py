@@ -254,6 +254,35 @@ class NoteSequence:
 
         return self if inplace else NoteSequence(notes, sustain_periods)
 
+    def time_shift(self, offset, inplace=True):
+        '''
+        Stretches the start and end of all notes in this :class:`NoteSequence` by a specified offset.
+
+        :param offset:
+            The amount to shift the start and end of each note by.
+        :param inplace:
+            Indicates whether the operation should be applied inplace. Defaults to ``True``.
+
+            Note: non-inplace operations require more memory since a deepcopy has to be performed.
+        :returns:
+            An instance of :class:`NoteSequence` with the applied modifications.
+
+        '''
+        
+        _copy_func = lambda x: x if inplace else copy.deepcopy(x)
+        notes = _copy_func(self.notes)
+        sustain_periods = _copy_func(self.sustain_periods)
+
+        for note in notes:
+            note.start += offset
+            note.end += offset
+
+        for sustain_period in sustain_periods:
+            sustain_period.start += offset
+            sustain_period.end += offset
+
+        return self if inplace else NoteSequence(notes, sustain_periods)
+        
     def pitch_shift(self, offset, inplace=True):
         '''
         Shifts the pitch of all notes in this :class:`NoteSequence` by a specified offset.
@@ -263,7 +292,7 @@ class NoteSequence:
             pitch or one that exceeds 127, it will have a final pitch of 0 or 127 respectively.
 
         :param offset:
-            The amount to shift the pithc of each note.
+            The amount to shift the pitch of each note by.
         :param inplace:
             Indicates whether the operation should be applied inplace. Defaults to ``True``.
 

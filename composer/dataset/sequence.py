@@ -282,7 +282,7 @@ class NoteSequence:
             sustain_period.end += offset
 
         return self if inplace else NoteSequence(notes, sustain_periods)
-        
+
     def pitch_shift(self, offset, inplace=True):
         '''
         Shifts the pitch of all notes in this :class:`NoteSequence` by a specified offset.
@@ -1562,7 +1562,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             if as_numpy_array:
                 event_ids = np.empty(event_count, dtype=numpy_dtype)
             else:
-                event_ids = [0] * event_ids
+                event_ids = [0] * event_count
             
             for i in range(event_count):
                 event_type, value = struct.unpack(cls._EVENT_FORMAT, file.read(event_size))

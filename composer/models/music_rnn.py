@@ -70,7 +70,7 @@ class MusicRNN(Model):
             # Convert lstm_dropout_probability to a numpy array of uniform elements.
             lstm_dropout_probability = np.full(lstm_layers_count, lstm_dropout_probability)
 
-        self.embedding_layer = layers.Embedding(event_dimensions, embedding_size, batch_input_shape=[batch_size, None])
+        self.embedding_layer = layers.Embedding(event_dimensions, embedding_size, batch_input_shape=(batch_size, None))
         self.lstm_layers = []
         self.dropout_layers = []
         # The batch normalization layers. If None, this means that we won't use them.

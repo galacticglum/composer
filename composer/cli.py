@@ -331,7 +331,7 @@ def summary(model_type, config_filepath):
     config = composer.config.get(config_filepath or get_default_config(model_type))
 
     model, dimensions = model_type.create_model(config)
-    model.build(input_shape=(config.train.batch_size, config.model.window_size, dimensions))
+    model.build(input_shape=(config.train.batch_size, None))
     model.summary()
 
 @cli.command()

@@ -9,12 +9,12 @@ dataset:
     velocity_bins: 32
     # Each sample will be stretched in time uniformly by up to +/- 10%.
     time_stretch_range:
-        - start: 0.90
-        - stop: 1.10
+        start: 0.90
+        stop: 1.10
     # Each sample will be pitch shifted down all intervals from -4 to 4 (major third).
     pitch_shift_range:
-        - start: -4
-        - stop: 4
+        start: -4
+        stop: 4
 model:
     window_size: 200
     embedding_size: 256

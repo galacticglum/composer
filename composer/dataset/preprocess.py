@@ -63,16 +63,17 @@ def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.9
 
         transformed_note_sequences = []
         for pitch_shift in range(pitch_shift_range[0], pitch_shift_range[1] + 1):
-            transformed_note_sequences.append(note_sequence.pitch_shift(pitch_shift), inplace=False)
+            if pitch_shift == 0: continue
+            transformed_note_sequences.append(note_sequence.pitch_shift(pitch_shift, inplace=False))
 
         transformed_note_sequences.append(note_sequence.time_stretch(_get_time_stretch(), inplace=False))
         
         # Output sequences
         for index, transformed_sequence in enumerate(transformed_note_sequences):
             destination_path = file_save_path.parent / (file_save_path.stem + '-' + str(index).zfill(2) + file_save_path.suffix)
-            transformed_sequence.to_event_sequence().to_integer_encoding(
+            transformed_sequence.to_event_sequence(
                 sustain_period_encode_mode=sustain_period_encode_mode
-            ).to_file(destination_path)
+            ).to_integer_encoding().to_file(destination_path)
 
 def _check_dataset_path(dataset_path):
     if not (dataset_path.exists() and dataset_path.is_dir()):
@@ -146,7 +147,7 @@ def convert_all(config, dataset_path, output_path, sustain_period_encode_mode, t
 
     parallel_process(kwargs, convert_file, use_kwargs=True)
 
-def split_dataset(dataset_path, root_outpath_directory, sustain_period_encode_mode, test_percent, transform, transform_percent, num_workers=16):
+def split_dataset(config, dataset_path, root_outpath_directory, sustain_period_encode_mode, test_percent, transform, transform_percent, num_workers=16):
     '''
     Splits all music files in a dataset directory into a training and testing set based on the specified ratio.
 
@@ -201,11 +202,11 @@ def split_dataset(dataset_path, root_outpath_directory, sustain_period_encode_mo
             train_files_transform[train_files[i]] = True
 
     # Run parallel processes to convert each file.
-    def _make_kwargs_set(files):
-        kwargs_train_set = [{
+    def _make_kwargs_set(files, files_transform, output_path):
+        return [{
             'filepath': file, 
             'output_path': output_path, 
-            'transform': files_transform[file],
+            'transform': files_transform[file] if files_transform is not None else False,
             'time_stretch_range': (config.dataset.time_stretch_range.start, config.dataset.time_stretch_range.stop),
             'pitch_shift_range': (config.dataset.pitch_shift_range.start, config.dataset.pitch_shift_range.stop),
             'time_step_increment': config.dataset.time_step_increment,
@@ -214,5 +215,5 @@ def split_dataset(dataset_path, root_outpath_directory, sustain_period_encode_mo
             'sustain_period_encode_mode': sustain_period_encode_mode
         } for file in files]
     
-    parallel_process(_make_kwargs_set(train_files), convert_file, use_kwargs=True)
-    parallel_process(_make_kwargs_set(test_files), convert_file, use_kwargs=True)
+    parallel_process(_make_kwargs_set(train_files, train_files_transform, train_outpath_path), convert_file, use_kwargs=True)
+    parallel_process(_make_kwargs_set(test_files, None, test_output_path), convert_file, use_kwargs=True)

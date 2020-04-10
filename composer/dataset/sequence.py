@@ -12,7 +12,7 @@ import collections
 import numpy as np
 
 from pathlib import Path
-from enum import Enum, IntEnum
+from enum import Enum, IntEnum, unique
 from pretty_midi import PrettyMIDI, Instrument, Note as MIDINote, ControlChange
 
 from composer.utils import ObjectPool
@@ -179,15 +179,16 @@ class NoteSequence:
 
     '''
 
+    @unique
     class SustainPeriodEncodeMode(Enum):
         '''
         The mode for encoding sustain periods.
 
         '''
 
-        NONE = 1
-        EXTEND = 2
-        EVENTS = 3
+        NONE = 'none'
+        EXTEND = 'extend'
+        EVENTS = 'events'
 
     def __init__(self, notes=None, sustain_periods=None):
         '''

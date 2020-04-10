@@ -54,103 +54,6 @@ def cli(ctx, verbosity, seed):
     logging_utils.init()
     _set_verbosity_level(logging.getLogger(), verbosity)
 
-@cli.command()
-@click.argument('dataset-path')
-@click.argument('output-directory')
-@click.option('--num-workers', '-w', default=16, help='The number of worker threads to spawn. Defaults to 16.')
-@click.option('-c', '--config', 'config_filepath', default=None, 
-              help='The path to the model configuration file. If unspecified, uses the default config for the model.')
-@click.option('--sustain-period-encode-mode', '-spe', default=NoteSequence.SustainPeriodEncodeMode.EXTEND, 
-              type=EnumType(NoteSequence.SustainPeriodEncodeMode, False), help='The way in which sustain periods should be encoded. ' +
-              'Defaults to EXTEND.\n\nRefer to NoteSequence.to_event_sequence documentation for more details on this parameter.')
-@click.option('--transform/--no-transform', default=False, help='Indicates whether the dataset should be transformed. ' +
-              'If true, a percentage of the dataset is duplicated and pitch shifted and/or time-stretched. Defaults to False.\n' +
-              'Note: transforming a single sample produces many new samples: one for each pitch in the pitch shift range, and a time' +
-              'stretched one (uniformly sampled from the time stretch range).')
-@click.option('--transform-percent', default=1.0, help='The percentage of the dataset that should be transformed. Defaults to 100%% of the dataset.')
-@click.option('--split/--no-split', default=True, help='Indicates whether the dataset should be split into train and test sets. Defaults to True.')
-@click.option('--test-percent', default=0.30, help='The percentage of the dataset that is allocated to testing. Defaults to 30%%')
-@click.option('--metadata/--no-metadata', 'output_metadata', default=True, help='Indicates whether to output metadata. Defaults to True.')
-def preprocess(dataset_path, output_directory, num_workers, config_filepath, sustain_period_encode_mode,
-               transform, transform_percent, split, test_percent, output_metadata):
-    '''
-    Preprocesses a raw dataset so that it can be used by the models.
-
-    '''
-
-    config = composer.config.get(config_filepath or get_default_config(model_type))
-    output_directory = Path(output_directory)
-
-    if split:
-        composer.dataset.preprocess.split_dataset(config, dataset_path, output_directory, sustain_period_encode_mode,
-                                                  test_percent, transform, transform_percent, num_workers)
-    else:
-        composer.dataset.preprocess.convert_all(config, dataset_path, output_directory, sustain_period_encode_mode, 
-                                                transform, transform_percent, num_workers)
-
-    if not output_metadata: return
-    with open(output_directory / 'metadata.json', 'w+') as metadata_file:
-        # The metadata file is a dump of the settings used to preprocess the dataset.
-        metadata = {
-            'local_time': str(datetime.datetime.now()),
-            'utc_time': str(datetime.datetime.utcnow()),
-            'raw_dataset_path': str(Path(dataset_path).absolute()),
-            'output_directory': str(output_directory.absolute()),
-            'transform': transform,
-            'transform_percent': transform_percent,
-            'split': split,
-            'test_percent': test_percent,
-            'seed': int(np.random.get_state()[1][0])
-        }
-
-        json.dump(metadata, metadata_file, indent=True)
-    
-    # Copy the config file used to preprocess the dataset
-    copy2(config.filepath, output_directory / 'config.yml')
-
-def get_event_sequence_ranges(config):
-    '''
-    Gets the event sequence value ranges, dimensions, and ranges.
-
-    :param config:
-        A :class:`composer.config.ConfigInstance` containing the configuration values.
-    :returns:
-        The event value ranges, event dimensions, and event ranges.
-
-    '''
-
-    event_value_ranges = EventSequence._compute_event_value_ranges(config.dataset.time_step_increment, \
-                                        config.dataset.max_time_steps, config.dataset.velocity_bins)
-    event_dimensions = EventSequence._compute_event_dimensions(event_value_ranges)
-    event_ranges = EventSequence._compute_event_ranges(event_dimensions)
-
-    return event_value_ranges, event_dimensions, event_ranges
-
-def _get_event_vocab_size(config):
-    '''
-    Computes the vocabulary size of the integer encoded events.
-
-    :param config:
-        A :class:`composer.config.ConfigInstance` containing the configuration values.
-    :returns:
-        The dimensions of an encoded event network input.
-
-    '''
-        
-    _, _, event_ranges = get_event_sequence_ranges(config)
-    return OneHotEncodedEventSequence.get_one_hot_size(event_ranges)
-
-def decode_to_event(config, event_id):
-    '''
-    Decodes an encoded event to a :class:`composer.dataset.sequence.Event`
-    based on the configuration values.
-
-    '''
-
-    event_value_ranges, event_dimensions, event_ranges = get_event_sequence_ranges(config)
-    IntegerEncodedEventSequence.event_to_id()
-    return IntegerEncodedEventSequence.id_to_event(event_id, event_ranges, event_value_ranges)
-
 @unique
 class ModelType(Enum):
     '''
@@ -301,6 +204,104 @@ class ModelType(Enum):
         '''
 
         return self.get_dataset(dataset_path, 'test', config, use_generator, max_files, show_progress_bar)
+
+@cli.command()
+@click.argument('model-type', type=EnumType(ModelType, False))
+@click.argument('dataset-path')
+@click.argument('output-directory')
+@click.option('--num-workers', '-w', default=16, help='The number of worker threads to spawn. Defaults to 16.')
+@click.option('-c', '--config', 'config_filepath', default=None, 
+              help='The path to the model configuration file. If unspecified, uses the default config for the model.')
+@click.option('--sustain-period-encode-mode', '-spe', default='extend', type=EnumType(NoteSequence.SustainPeriodEncodeMode, False), 
+              help='The way in which sustain periods should be encoded. Defaults to EXTEND.\n\nRefer to NoteSequence.to_event_sequence ' +
+              'documentation for more details on this parameter.')
+@click.option('--transform/--no-transform', default=True, help='Indicates whether the dataset should be transformed. ' +
+              'If true, a percentage of the dataset is duplicated and pitch shifted and/or time-stretched. Defaults to False.\n' +
+              'Note: transforming a single sample produces many new samples: one for each pitch in the pitch shift range, and a time' +
+              'stretched one (uniformly sampled from the time stretch range).')
+@click.option('--transform-percent', default=1.0, help='The percentage of the dataset that should be transformed. Defaults to 100%% of the dataset.')
+@click.option('--split/--no-split', default=True, help='Indicates whether the dataset should be split into train and test sets. Defaults to True.')
+@click.option('--test-percent', default=0.30, help='The percentage of the dataset that is allocated to testing. Defaults to 30%%')
+@click.option('--metadata/--no-metadata', 'output_metadata', default=True, help='Indicates whether to output metadata. Defaults to True.')
+def preprocess(model_type, dataset_path, output_directory, num_workers, config_filepath, sustain_period_encode_mode, 
+               transform, transform_percent, split, test_percent, output_metadata):
+    '''
+    Preprocesses a raw dataset so that it can be used by specified model type.
+
+    '''
+
+    config = composer.config.get(config_filepath or get_default_config(model_type))
+    output_directory = Path(output_directory)
+
+    if split:
+        composer.dataset.preprocess.split_dataset(config, dataset_path, output_directory, sustain_period_encode_mode,
+                                                  test_percent, transform, transform_percent, num_workers)
+    else:
+        composer.dataset.preprocess.convert_all(config, dataset_path, output_directory, sustain_period_encode_mode, 
+                                                transform, transform_percent, num_workers)
+
+    if not output_metadata: return
+    with open(output_directory / 'metadata.json', 'w+') as metadata_file:
+        # The metadata file is a dump of the settings used to preprocess the dataset.
+        metadata = {
+            'local_time': str(datetime.datetime.now()),
+            'utc_time': str(datetime.datetime.utcnow()),
+            'raw_dataset_path': str(Path(dataset_path).absolute()),
+            'output_directory': str(output_directory.absolute()),
+            'transform': transform,
+            'transform_percent': transform_percent,
+            'split': split,
+            'test_percent': test_percent,
+            'seed': int(np.random.get_state()[1][0])
+        }
+
+        json.dump(metadata, metadata_file, indent=True)
+    
+    # Copy the config file used to preprocess the dataset
+    copy2(config.filepath, output_directory / 'config.yml')
+
+def get_event_sequence_ranges(config):
+    '''
+    Gets the event sequence value ranges, dimensions, and ranges.
+
+    :param config:
+        A :class:`composer.config.ConfigInstance` containing the configuration values.
+    :returns:
+        The event value ranges, event dimensions, and event ranges.
+
+    '''
+
+    event_value_ranges = EventSequence._compute_event_value_ranges(config.dataset.time_step_increment, \
+                                        config.dataset.max_time_steps, config.dataset.velocity_bins)
+    event_dimensions = EventSequence._compute_event_dimensions(event_value_ranges)
+    event_ranges = EventSequence._compute_event_ranges(event_dimensions)
+
+    return event_value_ranges, event_dimensions, event_ranges
+
+def _get_event_vocab_size(config):
+    '''
+    Computes the vocabulary size of the integer encoded events.
+
+    :param config:
+        A :class:`composer.config.ConfigInstance` containing the configuration values.
+    :returns:
+        The dimensions of an encoded event network input.
+
+    '''
+        
+    _, _, event_ranges = get_event_sequence_ranges(config)
+    return OneHotEncodedEventSequence.get_one_hot_size(event_ranges)
+
+def decode_to_event(config, event_id):
+    '''
+    Decodes an encoded event to a :class:`composer.dataset.sequence.Event`
+    based on the configuration values.
+
+    '''
+
+    event_value_ranges, event_dimensions, event_ranges = get_event_sequence_ranges(config)
+    IntegerEncodedEventSequence.event_to_id()
+    return IntegerEncodedEventSequence.id_to_event(event_id, event_ranges, event_value_ranges)
 
 def get_default_config(model_type):
     '''

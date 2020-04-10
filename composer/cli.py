@@ -71,7 +71,7 @@ def cli(ctx, verbosity, seed):
 @click.option('--split/--no-split', default=True, help='Indicates whether the dataset should be split into train and test sets. Defaults to True.')
 @click.option('--test-percent', default=0.30, help='The percentage of the dataset that is allocated to testing. Defaults to 30%%')
 @click.option('--metadata/--no-metadata', 'output_metadata', default=True, help='Indicates whether to output metadata. Defaults to True.')
-def preprocess(dataset_path, output_directory, num_workers, config_filepath,
+def preprocess(dataset_path, output_directory, num_workers, config_filepath, sustain_period_encode_mode,
                transform, transform_percent, split, test_percent, output_metadata):
     '''
     Preprocesses a raw dataset so that it can be used by the models.
@@ -82,10 +82,11 @@ def preprocess(dataset_path, output_directory, num_workers, config_filepath,
     output_directory = Path(output_directory)
 
     if split:
-        composer.dataset.preprocess.split_dataset(config, dataset_path, output_directory, test_percent, 
-                                                  transform, transform_percent, num_workers)
+        composer.dataset.preprocess.split_dataset(config, dataset_path, output_directory, sustain_period_encode_mode,
+                                                  test_percent, transform, transform_percent, num_workers)
     else:
-        composer.dataset.preprocess.convert_all(config, dataset_path, output_directory, num_workers)
+        composer.dataset.preprocess.convert_all(config, dataset_path, output_directory, sustain_period_encode_mode, 
+                                                transform, transform_percent, num_workers)
 
     if not output_metadata: return
     with open(output_directory / 'metadata.json', 'w+') as metadata_file:

@@ -15,7 +15,8 @@ from composer.dataset.sequence import NoteSequence
 _OUTPUT_EXTENSION = 'data'
 
 def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.90, 1.10), pitch_shift_range=(-4, 4),
-                 time_step_increment=10, max_time_steps=100, velocity_bins=32):
+                 time_step_increment=10, max_time_steps=100, velocity_bins=32,
+                 sustain_period_encode_mode=NoteSequence.SustainPeriodEncodeMode.EXTEND):
     '''
     Converts a music file to a set of sequences.
 
@@ -40,6 +41,9 @@ def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.9
         If this is ``None``, there is no limit.
     :param velocity_bins:
         The number of bins to quantize the note velocity values into. Defaults to 32.
+    :param sustain_period_encode_mode:
+        The way in which sustain periods should be encoded.
+        Defaults to :var:``composer.dataset.sequence.NoteSequence.SustainPeriodEncodeMode.EXTEND``.
 
     '''
 
@@ -60,13 +64,15 @@ def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.9
         transformed_note_sequences = []
         for pitch_shift in range(pitch_shift_range[0], pitch_shift_range[1] + 1):
             transformed_note_sequences.append(note_sequence.pitch_shift(pitch_shift), inplace=False)
-            
+
         transformed_note_sequences.append(note_sequence.time_stretch(_get_time_stretch(), inplace=False))
         
         # Output sequences
         for index, transformed_sequence in enumerate(transformed_note_sequences):
             destination_path = file_save_path.parent / (file_save_path.stem + '-' + str(index).zfill(2) + file_save_path.suffix)
-            transformed_sequence.to_event_sequence().to_integer_encoding().to_file(destination_path)
+            transformed_sequence.to_event_sequence().to_integer_encoding(
+                sustain_period_encode_mode=sustain_period_encode_mode
+            ).to_file(destination_path)
 
 def _check_dataset_path(dataset_path):
     if not (dataset_path.exists() and dataset_path.is_dir()):
@@ -90,7 +96,7 @@ def _get_dataset_files(dataset_path):
     
     return filepaths
 
-def convert_all(config, dataset_path, output_path, transform, transform_percent, num_workers=16):
+def convert_all(config, dataset_path, output_path, sustain_period_encode_mode, transform, transform_percent, num_workers=16):
     '''
     Converts all music files in a dataset directory to a compact format readable by the Composer models.
 
@@ -100,6 +106,8 @@ def convert_all(config, dataset_path, output_path, transform, transform_percent,
         The path to the dataset directory.
     :param output_path:
         The directory where the preprocessed data will be saved.
+    :param sustain_period_encode_mode:
+        The way in which sustain periods should be encoded.
     :param transform:
         Indicates whether the dataset should be transformed. If ``True``, a percentage of the dataset
         is duplicated and pitch shifted and/or time-stretched.
@@ -132,12 +140,13 @@ def convert_all(config, dataset_path, output_path, transform, transform_percent,
         'pitch_shift_range': (config.dataset.pitch_shift_range.start, config.dataset.pitch_shift_range.stop),
         'time_step_increment': config.dataset.time_step_increment,
         'max_time_steps': config.dataset.max_time_steps,
-        'velocity_bins': config.dataset.velocity_bins
+        'velocity_bins': config.dataset.velocity_bins,
+        'sustain_period_encode_mode': sustain_period_encode_mode
     } for file in filepaths]
 
     parallel_process(kwargs, convert_file, use_kwargs=True)
 
-def split_dataset(dataset_path, root_outpath_directory, test_percent, transform, transform_percent, num_workers=16):
+def split_dataset(dataset_path, root_outpath_directory, sustain_period_encode_mode, test_percent, transform, transform_percent, num_workers=16):
     '''
     Splits all music files in a dataset directory into a training and testing set based on the specified ratio.
 
@@ -147,6 +156,8 @@ def split_dataset(dataset_path, root_outpath_directory, test_percent, transform,
         The path to the dataset directory.
     :param root_outpath_directory:
         The root directory where the preprocessed data will be saved.
+    :param sustain_period_encode_mode:
+        The way in which sustain periods should be encoded.
     :param test_percent:
         The percentage (0 to 1) of the dataset that it allocated to the test set.
     :param transform:
@@ -190,6 +201,18 @@ def split_dataset(dataset_path, root_outpath_directory, test_percent, transform,
             train_files_transform[train_files[i]] = True
 
     # Run parallel processes to convert each file.
-    kwargs_train_set = [{'filepath': file, 'output_path': train_outpath_path, 'transform': train_files_transform[file]} for file in train_files]
-    parallel_process(kwargs_train_set, convert_file, use_kwargs=True)
-    parallel_process([{'filepath': file, 'output_path': test_output_path} for file in test_files], convert_file, use_kwargs=True)
+    def _make_kwargs_set(files):
+        kwargs_train_set = [{
+            'filepath': file, 
+            'output_path': output_path, 
+            'transform': files_transform[file],
+            'time_stretch_range': (config.dataset.time_stretch_range.start, config.dataset.time_stretch_range.stop),
+            'pitch_shift_range': (config.dataset.pitch_shift_range.start, config.dataset.pitch_shift_range.stop),
+            'time_step_increment': config.dataset.time_step_increment,
+            'max_time_steps': config.dataset.max_time_steps,
+            'velocity_bins': config.dataset.velocity_bins,
+            'sustain_period_encode_mode': sustain_period_encode_mode
+        } for file in files]
+    
+    parallel_process(_make_kwargs_set(train_files), convert_file, use_kwargs=True)
+    parallel_process(_make_kwargs_set(test_files), convert_file, use_kwargs=True)

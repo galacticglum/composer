@@ -97,26 +97,32 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
                 filepath = bytes(filepath).decode('utf-8')
                 for event in _get_events_from_file(filepath, window_size):
                     yield event
-
-    # To determine the input and output dimensions, we load up a file as if we were
-    # loading it into the dataset object. We use its shape to determine the dimensions.
-    # This has the disadvantage of requiring an extra (and unnecessary) load operation;
-    # however, the advantage is we don't have to hard code our shapes reducing the potential
-    # points of error and thus making our code more maintainable.
-    _example = next(_get_events_from_file(filepaths[0], input_event_encoding))
-    if len(_example.shape) > 0:
-        output_shapes = (_example.shape[-1],)
-    else:
-        output_shapes = ()
         
     if use_generator:
         # Convert filepaths to strings because TensorFlow cannot handle Pathlib objects.
         filepaths = [str(path) for path in filepaths]
 
+        if input_event_encoding == EventEncodingType.ONE_HOT:
+            # To determine the input and output dimensions, we load up a file as if we were
+            # loading it into the dataset object. We use its shape to determine the dimensions.
+            # This has the disadvantage of requiring an extra (and unnecessary) load operation;
+            # however, the advantage is we don't have to hard code our shapes reducing the potential
+            # points of error and thus making our code more maintainable.
+            _example = next(_get_events_from_file(filepaths[0], input_event_encoding))
+            if len(_example.shape) > 0:
+                output_shapes = (_example.shape[-1],)
+            else:
+                raise Exception('Failed to load dataset as one-hot encoded events. Expected non-empty shape but got {}.'.format(_example.shape))
+
+            ouput_types = tf.float64
+        else:
+            output_shapes ()
+            ouput_types = tf.int32 
+
         # Create the TensorFlow dataset object
         dataset = tf.data.Dataset.from_generator(
             _generator,
-            output_types=tf.float32,
+            output_types=output_types,
             output_shapes=output_shapes,
             args=(filepaths, int(input_event_encoding))
         )
@@ -135,11 +141,7 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
         flatten = lambda x: [item for sublist in x for item in sublist]
         data = flatten(data)
 
-        dataset = tf.data.Dataset.from_generator(
-            lambda: data,
-            output_types=tf.float32,
-            output_shapes=output_shapes
-        )
+        dataset = tf.data.Dataset.from_tensor_slices(data)
 
         # Since all the data has been loaded into memory, we can make the shuffle buffer as large as we
         # we want. In this case, we make it big enough to fit all the data. This will guarantee a good shuffle.

@@ -19,7 +19,7 @@ class MusicRNN(Model):
         event-based sequence description.
     '''
 
-    def __init__(self, event_dimensions, window_size, lstm_layers_count, 
+    def __init__(self, event_dimensions, batch_size, embedding_size, lstm_layers_count,
                  lstm_layer_sizes, lstm_dropout_probability, use_batch_normalization=True):
 
         '''
@@ -29,8 +29,10 @@ class MusicRNN(Model):
             An integer denoting the dimensions of a single feature (i.e. the size of an event sequence).
             The network takes in a sequence of these events and outputs an event in the form of a sequence
             of the same size denoting the next event in the sequence.
-        :param window_size:
-            The number of events (input sequences) to use to predict.
+        :param batch_size:
+            The number of events in a single batch.
+        :param embedding_size:
+            The number of units in the embedding layer.
         :param lstm_layers_count:
             The number of LSTM layers.
         :param lstm_layer_sizes:
@@ -68,28 +70,20 @@ class MusicRNN(Model):
             # Convert lstm_dropout_probability to a numpy array of uniform elements.
             lstm_dropout_probability = np.full(lstm_layers_count, lstm_dropout_probability)
 
+        self.embedding_layer = layers.Embedding(event_dimensions, embedding_size, batch_input_shape=[batch_size, None])
         self.lstm_layers = []
         self.dropout_layers = []
         # The batch normalization layers. If None, this means that we won't use them.
         self.normalization_layers = None if not use_batch_normalization else []
         for i in range(lstm_layers_count):
-            # To stack the LSTM layers, we have to set the return_sequences parameter to True
-            # so that the layers return a 3-dimensional output representing the sequences.
-            # All layers but the last one should do this.
-            #
-            # The input shape of an LSTM layer is in the form of (batch_size, time_steps, sequence_length); however,
-            # the input_shape kwarg only needs (time_steps, sequence_length) since batch_size can be inferred at runtime.
-            # Time steps refers to how many input sequences there are, and sequence_length is the number of units in one
-            # input sequence. In our case, since the input is a one-hot vector, a single input sequence is the size of
-            # this vector. Time steps is the number of one-hot vectors that we are passing in.
-            self.lstm_layers.append(layers.LSTM(lstm_layer_sizes[i], input_shape=(window_size, event_dimensions), 
-                                    return_sequences=True, stateful=True, recurrent_initializer='glorot_uniform'))
+            self.lstm_layers.append(layers.LSTM(lstm_layer_sizes[i], return_sequences=True, 
+                                    stateful=True, recurrent_initializer='glorot_uniform'))
             self.dropout_layers.append(layers.Dropout(lstm_dropout_probability[i]))
 
             if use_batch_normalization:
                 self.normalization_layers.append(layers.BatchNormalization())
 
-        self.output_layer = layers.Dense(event_dimensions, activation='softmax')
+        self.output_layer = layers.Dense(event_dimensions)
 
     def call(self, inputs):
         '''
@@ -102,6 +96,7 @@ class MusicRNN(Model):
 
         '''
 
+        inputs = self.embedding_layer(inputs)
         for i in range(self.lstm_layers_count):
             # Apply LSTM layer
             inputs = self.lstm_layers[i](inputs)
@@ -113,6 +108,5 @@ class MusicRNN(Model):
             if self.normalization_layers is not None:
                 inputs = self.normalization_layers[i](inputs)
 
-        inputs = self.output_layer(inputs)
-        
+        inputs = self.output_layer(inputs)   
         return inputs

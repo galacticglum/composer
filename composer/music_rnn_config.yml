@@ -15,6 +15,7 @@ dataset:
         - stop: 6
 model:
     window_size: 200
+    embedding_size: 256
     lstm_layers_count: 3
     lstm_layer_sizes: 512
     lstm_dropout_probability: 0.30

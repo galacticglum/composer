@@ -20,7 +20,7 @@ from pathlib import Path
 from enum import Enum, unique
 from composer.click_utils import EnumType
 from composer.exceptions import DatasetError, InvalidParameterError
-from composer.dataset.sequence import NoteSequence, EventSequence, OneHotEncodedEventSequence
+from composer.dataset.sequence import NoteSequence, EventSequence, OneHotEncodedEventSequence, IntegerEncodedEventSequence
 
 def _set_verbosity_level(logger, value):
     '''
@@ -115,7 +115,6 @@ def get_event_sequence_ranges(config):
 
     '''
 
-    from composer.dataset.sequence import EventSequence
     event_value_ranges = EventSequence._compute_event_value_ranges(config.dataset.time_step_increment, \
                                         config.dataset.max_time_steps, config.dataset.velocity_bins)
     event_dimensions = EventSequence._compute_event_dimensions(event_value_ranges)
@@ -123,9 +122,9 @@ def get_event_sequence_ranges(config):
 
     return event_value_ranges, event_dimensions, event_ranges
 
-def get_model_event_dimensions(config):
+def _get_event_vocab_size(config):
     '''
-    Computes the dimension of a single event input in the network.
+    Computes the vocabulary size of the integer encoded events.
 
     :param config:
         A :class:`composer.config.ConfigInstance` containing the configuration values.
@@ -133,23 +132,20 @@ def get_model_event_dimensions(config):
         The dimensions of an encoded event network input.
 
     '''
-    
-    from composer.dataset.sequence import OneHotEncodedEventSequence
-    
+        
     _, _, event_ranges = get_event_sequence_ranges(config)
     return OneHotEncodedEventSequence.get_one_hot_size(event_ranges)
 
-def decode_to_event(config, encoded):
+def decode_to_event(config, event_id):
     '''
     Decodes an encoded event to a :class:`composer.dataset.sequence.Event`
     based on the configuration values.
 
     '''
 
-    from composer.dataset.sequence import OneHotEncodedEventSequence
-
     event_value_ranges, event_dimensions, event_ranges = get_event_sequence_ranges(config)
-    return OneHotEncodedEventSequence.one_hot_vector_as_event(encoded, event_ranges, event_value_ranges)
+    IntegerEncodedEventSequence.event_to_id()
+    return IntegerEncodedEventSequence.id_to_event(event_id, event_ranges, event_value_ranges)
 
 @unique
 class ModelType(Enum):
@@ -174,16 +170,16 @@ class ModelType(Enum):
             and the dimensions of an event (single feature and label) in the dataset.
         '''
 
-        dimensions = get_model_event_dimensions(config)
+        dimensions = _get_event_vocab_size(config)
 
         # Creates the MusicRNN model.
         def _create_music_rnn():
             from composer import models
 
             return models.MusicRNN(
-                dimensions, config.model.window_size, config.model.lstm_layers_count,
-                config.model.lstm_layer_sizes, config.model.lstm_dropout_probability,
-                config.model.use_batch_normalization
+                dimensions, config.train.batch_size, config.model.embedding_size, 
+                config.model.lstm_layers_count, config.model.lstm_layer_sizes, 
+                config.model.lstm_dropout_probability, config.model.use_batch_normalization
             )
 
         # An easy way to map the creation functions to their respective types.
@@ -235,10 +231,10 @@ class ModelType(Enum):
             if max_files is not None:
                 files = files[:max_files]
 
-            dataset, _ = load_dataset(files, config.train.batch_size, config.model.window_size, 
-                                                input_event_encoding=EventEncodingType.ONE_HOT, 
-                                                show_loading_progress_bar=show_progress_bar,
-                                                use_generator=use_generator)
+            dataset = load_dataset(files, config.train.batch_size, config.model.window_size,
+                                      input_event_encoding=EventEncodingType.INTEGER,
+                                      show_loading_progress_bar=show_progress_bar,
+                                      use_generator=use_generator)
 
             return dataset
 
@@ -318,7 +314,7 @@ def compile_model(model, config):
 
     from tensorflow.keras import optimizers, losses
 
-    loss = losses.CategoricalCrossentropy(from_logits=True)
+    loss = losses.SparseCategoricalCrossentropy(from_logits=True)
     optimizer = optimizers.Adam(learning_rate=config.train.learning_rate)
     model.compile(loss=loss, optimizer=optimizer, metrics=['accuracy'])
 
@@ -360,9 +356,9 @@ def visualize_training(model_type, dataset_path, config_filepath, steps, decode_
     events = []
     if model_type == ModelType.MUSIC_RNN:
         for batch_x, batch_y in dataset:
-            features = batch_x.numpy().reshape(-1, batch_x.shape[-1])
-            labels = batch_y.numpy().reshape(-1, batch_y.shape[-1])
-            
+            features = batch_x.numpy().reshape(-1)
+            labels = batch_y.numpy().reshape(-1)
+
             assert features.shape == labels.shape
             for i in range(len(features)):
                 if count == steps: break
@@ -409,7 +405,7 @@ def visualize_training(model_type, dataset_path, config_filepath, steps, decode_
               '(rather than into memory all at once). Defaults to False.')
 @click.option('--backup-config/--no-backup--config', default=True, help='Makes a copy of the configuration file used ' +
               'in the model\'s output directory. Defaults to True.')
-@click.option('--max-files', default=None, help='The maximum number of files to load. Defaults to None, which means  ' + 
+@click.option('--max-files', default=None, help='The maximum number of files to load. Defaults to None, which means ' + 
               'that ALL files will be loaded.', type=int)
 @click.option('--save-freq', default=1000, help='The frequency at which to save the model. This can be \'epoch\' or integer. ' +
               'When using \'epoch\', the model will be saved every epoch; otherwise, it saves after the specified number of batches. ' +
@@ -430,6 +426,8 @@ def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs,
     model, _ = model_type.create_model(config)
     compile_model(model, config)
 
+    # We need to build the model so that it knows about the batch size.
+    model.build(input_shape=(config.train.batch_size, None))
 
     if restoredir is not None:
         checkpoint = tf.train.latest_checkpoint(restoredir)
@@ -470,7 +468,7 @@ def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs,
 @click.option('--use-generator/--no-use-generator', default=False,
               help='Indicates whether the dataset should be loaded in chunks during processing ' +
               '(rather than into memory all at once). Defaults to False.')
-@click.option('--max-files', default=None, help='The maximum number of files to load. Defaults to None, which means  ' + 
+@click.option('--max-files', default=None, help='The maximum number of files to load. Defaults to None, which means ' + 
               'that ALL files will be loaded.', type=int)
 def evaluate(model_type, dataset_path, restoredir, config_filepath, use_generator, max_files):
     '''
@@ -513,31 +511,30 @@ def generate(model_type, restoredir, output_filepath, config_filepath, prompt, p
 
     config = composer.config.get(config_filepath or get_default_config(model_type))
     model, dimensions = model_type.create_model(config)
-    
+
     compile_model(model, config)
     model.load_weights(tf.train.latest_checkpoint(restoredir))
-    model.build(input_shape=(1, prompt_length, dimensions))
+    model.build(input_shape=(1, None))
 
     if prompt is None:
         raise NotImplementedError()
 
     event_sequence = NoteSequence.from_midi(prompt).to_event_sequence(config.dataset.time_step_increment, \
-                config.dataset.max_time_steps, config.dataset.velocity_bins)
+            config.dataset.max_time_steps, config.dataset.velocity_bins)
 
     event_sequence.events = event_sequence.events[:prompt_length]
 
     def _encode(event):
-        return OneHotEncodedEventSequence.event_as_one_hot_vector(event, event_sequence.event_ranges, \
-                    event_sequence.event_value_ranges, as_numpy_array=True, numpy_dtype=np.float)
+        return IntegerEncodedEventSequence.event_to_id(event.type, event.value, event_sequence.event_ranges, \
+                event_sequence.event_value_ranges)
 
-    def _decode(vector):
-        return OneHotEncodedEventSequence.one_hot_vector_as_event(vector, event_sequence.event_ranges, \
-                    event_sequence.event_value_ranges)
+    def _decode(event_id):
+        return IntegerEncodedEventSequence.id_to_event(event_id, event_sequence.event_ranges, \
+                event_sequence.event_value_ranges)
 
     x = [_encode(event) for event in event_sequence.events]
     x = tf.expand_dims(x, 0)
-    
-    vector_size = OneHotEncodedEventSequence.get_one_hot_size(event_sequence.event_ranges)
+
     model.reset_states()
     for i in tqdm.tqdm(range(generate_length)):
         predictions = model(x)
@@ -546,11 +543,8 @@ def generate(model_type, restoredir, output_filepath, config_filepath, prompt, p
 
         predicted_id = tf.random.categorical(predictions, num_samples=1)[-1, 0].numpy()
 
-        predicted_vector = np.zeros(vector_size)
-        predicted_vector[predicted_id] = 1
-
-        x = tf.expand_dims([predicted_vector], 0)
-        event_sequence.events.append(_decode(predicted_vector))
+        x = tf.expand_dims([predicted_id], 0)
+        event_sequence.events.append(_decode(predicted_id))
 
     output_filepath = Path(output_filepath)
     output_filepath.parent.mkdir(parents=True, exist_ok=True)

@@ -71,7 +71,8 @@ def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3, 
             'total': len(futures),
             'unit': 'it',
             'unit_scale': True,
-            'leave': True
+            'leave': True,
+            'disable': not show_progress_bar
         }
 
         # Print out the progress as tasks complete
@@ -82,7 +83,7 @@ def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3, 
     
     # Get the results from the futures. 
     _add_func = lambda x: out.extend(x) if extend_result else out.append(x)
-    for i, future in tqdm(enumerate(futures), disable=not show_progress_bar):
+    for i, future in tqdm(enumerate(futures)):
         try:
             _add_func(future.result())
         except Exception as e:

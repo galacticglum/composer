@@ -1598,6 +1598,41 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             return event_ids, event_value_ranges, event_ranges, settings
 
     @classmethod
+    def event_ids_from_file_as_generator(cls, filepath):
+        '''
+        Loads an :class:`IntegerEncodedEventSequence` from
+        the specified filepath as single integer event ids
+        and returns them as a generator object.
+
+        :note:
+            These event ids act very similarly to one-hot vectors.
+            They are simply to make data handling more efficient within the network.
+
+        :param filepath:
+            The source of the encoded sequence.
+        :returns:
+            A generator which yields integers representing the event ids.
+
+        '''
+        
+        with open(filepath, 'rb') as file:
+            time_step_increment, max_time_steps, velocity_bins, header_size = cls._load_file_header(file)
+
+            # The size of a single encoded event, in bytes.
+            event_size = struct.calcsize(cls._EVENT_FORMAT)
+            buffer_length = os.stat(filepath).st_size - header_size
+
+            # Compute the event ranges (used to create the event ids)
+            event_value_ranges = EventSequence._compute_event_value_ranges(time_step_increment, max_time_steps, velocity_bins)
+            event_ranges = EventSequence._compute_event_ranges(EventSequence._compute_event_dimensions(event_value_ranges))
+
+            # The number of events to encode.
+            event_count = buffer_length // event_size
+            for i in range(event_count):
+                event_type, value = struct.unpack(cls._EVENT_FORMAT, file.read(event_size))
+                yield cls.event_to_id(_EVENT_TYPE_MAPPINGS[event_type], value, event_ranges, event_value_ranges)
+
+    @classmethod
     def one_hot_from_file(cls, filepath, as_numpy_array=False, numpy_dtype=np.int):
         '''
         Loads an :class:`IntegerEncodedEventSequence` from
@@ -1658,6 +1693,66 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
 
             settings = (time_step_increment, max_time_steps, velocity_bins)
             return vectors, event_value_ranges, event_ranges, settings
+
+    @classmethod
+    def one_hot_from_file_as_generator(cls, filepath, as_numpy_array=False, numpy_dtype=np.int):
+        '''
+        Loads an :class:`IntegerEncodedEventSequence` from
+        the specified filepath as one-hot vectors and returns
+        them as a generator object.
+
+        :note:
+            These one-hot vectors are constructed based on the id of each event.
+            An event id is fundmenetally similar to the one-hot vector representation. 
+            The integer id of an event is the zero-based index of the  "hot" (active) bit 
+            of its one-hot vector representation.
+            
+            These event ids act very similarly to one-hot vectors. They are simply to make 
+            data handling more efficient within the network. However, we may often want
+            to have access to the one-hot vectors directly.
+
+        :param filepath:
+            The source of the encoded sequence.
+        :param as_numpy_array:
+            Indicates whether the one-hot vectors should be returned as a numpy array.
+            Defaults to ``False``.
+
+            Note: numpy array creation is much faster than Python lists.
+        :param numpy_dtype:
+            The data type of the numpy array (if ``as_numpy_array`` is ``True``). Defaults to ``np.int``.
+        :returns:
+            A generator which yields one-hot vectors representing the events.
+
+        '''
+        
+        with open(filepath, 'rb') as file:
+            time_step_increment, max_time_steps, velocity_bins, header_size = cls._load_file_header(file)
+
+            # The size of a single encoded event, in bytes.
+            event_size = struct.calcsize(cls._EVENT_FORMAT)
+            buffer_length = os.stat(filepath).st_size - header_size
+
+            # Compute the event ranges (used to create the event ids)
+            event_value_ranges = EventSequence._compute_event_value_ranges(time_step_increment, max_time_steps, velocity_bins)
+            event_ranges = EventSequence._compute_event_ranges(EventSequence._compute_event_dimensions(event_value_ranges))
+
+            # The number of events to encode.
+            event_count = buffer_length // event_size
+            vector_dimensions = OneHotEncodedEventSequence.get_one_hot_size(event_ranges)
+            if as_numpy_array:
+                vectors = np.zeros((event_count, vector_dimensions), dtype=numpy_dtype)
+            else:
+                vectors = [[0] * vector_dimensions] * event_count
+            
+            for i in range(event_count):
+                event_type, value = struct.unpack(cls._EVENT_FORMAT, file.read(event_size))
+                event_id = cls.event_to_id(_EVENT_TYPE_MAPPINGS[event_type], value, event_ranges, event_value_ranges)
+                
+                # Set the "hot" bit of the one-hot vector.
+                vectors[i][event_id] = 1
+                yield vectors[i]
+
+            return vectors
 
     def get_encoding_type():
         '''

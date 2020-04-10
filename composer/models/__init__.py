@@ -36,8 +36,8 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
     :param use_generator:
         Indicates whether the Dataset should be given as a generator object. Defaults to ``False``.
     :param prefetch_buffer_size:
-        The number of batches to prefetch during processing. Defaults to 2. This means that 2 batches will be
-        prefetched while the current element is being processed.
+        The number of batches to prefetch during processing. Defaults to 2.
+        This means that 2 batches will be prefetched while the current element is being processed.
 
         Prefetching is only used if ``use_generator`` is ``True``.
     :param show_loading_progress_bar:
@@ -76,7 +76,7 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
             The way that events should be encoded before being inputted into the network.
 
         '''
-        
+
         if input_event_encoding == EventEncodingType.INTEGER:
             data, _, _, _ = sequence.IntegerEncodedEventSequence.event_ids_from_file(filepath)
         elif input_event_encoding == EventEncodingType.ONE_HOT:
@@ -84,6 +84,25 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
                                 as_numpy_array=True, numpy_dtype=np.float)
 
         return data
+
+    def _get_events_from_file_as_generator(filepath, input_event_encoding):
+        '''
+        Gets all events from a file as a generator.
+
+        :param filepath:
+            A Path-like object representing the filepath of the encoded event sequence.
+        :param input_event_encoding:
+            The way that events should be encoded before being inputted into the network.
+
+        '''
+        
+        if input_event_encoding == EventEncodingType.INTEGER:
+            generator = sequence.IntegerEncodedEventSequence.event_ids_from_file_as_generator(filepath)
+        elif input_event_encoding == EventEncodingType.ONE_HOT:
+            generator = sequence.IntegerEncodedEventSequence.one_hot_from_file_as_generator(filepath, \
+                                as_numpy_array=True, numpy_dtype=np.float)
+
+        return generator
 
     def _generator(filepaths, input_event_encoding):
             '''
@@ -94,13 +113,13 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
             for filepath in filepaths:
                 # TensorFlow automatically converts string arguments to bytes so we need to decode back to strings.
                 filepath = bytes(filepath).decode('utf-8')
-                for event in _get_events_from_file(filepath, input_event_encoding):
+                events_generator = _get_events_from_file_as_generator(filepath, input_event_encoding)
+                for event in events_generator:
                     yield event
         
     if use_generator:
         # Convert filepaths to strings because TensorFlow cannot handle Pathlib objects.
         filepaths = [str(path) for path in filepaths]
-
         if input_event_encoding == EventEncodingType.ONE_HOT:
             # To determine the input and output dimensions, we load up a file as if we were
             # loading it into the dataset object. We use its shape to determine the dimensions.
@@ -115,8 +134,8 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
 
             ouput_types = tf.float64
         else:
-            output_shapes ()
-            ouput_types = tf.int32 
+            output_shapes = ()
+            output_types = tf.int32
 
         # Create the TensorFlow dataset object
         dataset = tf.data.Dataset.from_generator(

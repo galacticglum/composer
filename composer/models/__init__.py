@@ -1,3 +1,4 @@
+import array
 import logging
 import numpy as np
 import tensorflow as tf
@@ -77,16 +78,14 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
         '''
         
         if input_event_encoding == EventEncodingType.INTEGER:
-            data, _, _, _ = sequence.IntegerEncodedEventSequence.event_ids_from_file(filepath, \
-                                as_numpy_array=True, numpy_dtype=np.int)
+            data, _, _, _ = sequence.IntegerEncodedEventSequence.event_ids_from_file(filepath)
         elif input_event_encoding == EventEncodingType.ONE_HOT:
             data, _, _, _ = sequence.IntegerEncodedEventSequence.one_hot_from_file(filepath, \
                                 as_numpy_array=True, numpy_dtype=np.float)
-        
-        for event in data:
-            yield event
 
-    def _generator(filepaths, window_size):
+        return data
+
+    def _generator(filepaths, input_event_encoding):
             '''
             The generator function for loading the dataset.
 
@@ -95,7 +94,7 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
             for filepath in filepaths:
                 # TensorFlow automatically converts string arguments to bytes so we need to decode back to strings.
                 filepath = bytes(filepath).decode('utf-8')
-                for event in _get_events_from_file(filepath, window_size):
+                for event in _get_events_from_file(filepath, input_event_encoding):
                     yield event
         
     if use_generator:
@@ -130,16 +129,10 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=False,
         # We make the shuffle buffer big enough to fit 500 batches. After that, it will have to reshuffle.
         shuffle_buffer_size = 50 * batch_size
     else:
-        _loader_func = lambda filepath: list(_get_events_from_file(filepath, input_event_encoding))
+        _loader_func = lambda filepath: _get_events_from_file(filepath, input_event_encoding)
         logging.info('- Loading dataset (\'{}\') into memory.'.format(filepaths[0].parent))
-        data = parallel_process(filepaths, _loader_func, multithread=True, n_jobs=16,
-                                front_num=0, show_progress_bar=show_loading_progress_bar)
-        
-        # Generator function that flattens a list of lists into a single list.
-        # For example, suppose x = [[(1, 1), (2, 2)], [(3, 3)]].
-        # The output of the flatten function is [(1, 1), (2, 2), (3, 3)].
-        flatten = lambda x: [item for sublist in x for item in sublist]
-        data = flatten(data)
+        data = parallel_process(filepaths, _loader_func, multithread=True, n_jobs=16, front_num=0, 
+                                show_progress_bar=show_loading_progress_bar, extend_result=True, initial_value=array.array('H'))
 
         dataset = tf.data.Dataset.from_tensor_slices(data)
 

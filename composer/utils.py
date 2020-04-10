@@ -9,7 +9,8 @@ from queue import Queue
 from collections import deque
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
-def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3, multithread=False, show_progress_bar=True):
+def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3, multithread=False, 
+                     show_progress_bar=True, extend_result=False, initial_value=list()):
     '''
     A parallel version of the map function with a progress bar. 
 
@@ -38,6 +39,12 @@ def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3, 
     :param show_progress_bar:
         Indicates whether a loading progress bar should be displayed while the process runs.
         Defaults to ``True``.
+    :param extend_result:
+        Indicates whether the resultant list should be extended rather than appended to. Defaults to ``False``.
+
+        Note: this requires that the return value of ``function`` is an array-like object.
+    :param initial_value:
+        The initial value of the resultant array. This should be an array-like object.
     :returns:
         A list of the form [function(array[0]), function(array[1]), ...].
 
@@ -70,16 +77,18 @@ def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3, 
         # Print out the progress as tasks complete
         for f in tqdm(as_completed(futures), **kwargs): pass
 
-    out = []
+    out = initial_value
+    out.extend(front)
     
     # Get the results from the futures. 
+    _add_func = lambda x: out.extend(x) if extend_result else out.append(x)
     for i, future in tqdm(enumerate(futures), disable=not show_progress_bar):
         try:
-            out.append(future.result())
+            _add_func(future.result())
         except Exception as e:
-            out.append(e)
+            _add_func(e)
 
-    return front + out
+    return out
 
 class ObjectPool:
     '''

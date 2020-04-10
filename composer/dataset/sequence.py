@@ -4,8 +4,10 @@ along with their associated event encodings.
 
 '''
 
+import os
 import abc
 import copy
+import array
 import struct
 import itertools
 import collections
@@ -1213,7 +1215,7 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
             header_size += half_size
 
             # Load remaining one-hot vectors
-            buffer_length = Path(filepath).stat().st_size - header_size
+            buffer_length = os.stat(filepath).st_size - header_size
             # The number of elements that the one-hot vector has.
             one_hot_vector_length = cls.get_one_hot_size(event_ranges)
             one_hot_vector_format = cls._get_one_hot_vector_format(one_hot_vector_length)
@@ -1472,7 +1474,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             time_step_increment, max_time_steps, velocity_bins, header_size = cls._load_file_header(file)
 
             event_size = struct.calcsize(cls._EVENT_FORMAT)
-            buffer_length = Path(filepath).stat().st_size - header_size
+            buffer_length = os.stat(filepath).st_size - header_size
 
             events = []
             for i in range(buffer_length // event_size):
@@ -1571,7 +1573,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
 
             # The size of a single encoded event, in bytes.
             event_size = struct.calcsize(cls._EVENT_FORMAT)
-            buffer_length = Path(filepath).stat().st_size - header_size
+            buffer_length = os.stat(filepath).st_size - header_size
 
             # Compute the event ranges (used to create the event ids)
             event_value_ranges = EventSequence._compute_event_value_ranges(time_step_increment, max_time_steps, velocity_bins)
@@ -1582,11 +1584,15 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             if as_numpy_array:
                 event_ids = np.empty(event_count, dtype=numpy_dtype)
             else:
-                event_ids = [0] * event_count
+                event_ids = array.array('H')
             
             for i in range(event_count):
                 event_type, value = struct.unpack(cls._EVENT_FORMAT, file.read(event_size))
-                event_ids[i] = cls.event_to_id(_EVENT_TYPE_MAPPINGS[event_type], value, event_ranges, event_value_ranges)
+                event_id = cls.event_to_id(_EVENT_TYPE_MAPPINGS[event_type], value, event_ranges, event_value_ranges)
+                if as_numpy_array:
+                    event_ids[i] = event_id
+                else:
+                    event_ids.append(event_id) 
 
             settings = (time_step_increment, max_time_steps, velocity_bins)
             return event_ids, event_value_ranges, event_ranges, settings
@@ -1629,7 +1635,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
 
             # The size of a single encoded event, in bytes.
             event_size = struct.calcsize(cls._EVENT_FORMAT)
-            buffer_length = Path(filepath).stat().st_size - header_size
+            buffer_length = os.stat(filepath).st_size - header_size
 
             # Compute the event ranges (used to create the event ids)
             event_value_ranges = EventSequence._compute_event_value_ranges(time_step_increment, max_time_steps, velocity_bins)

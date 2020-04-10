@@ -190,7 +190,7 @@ class ModelType(Enum):
 
         return function_map[self](), dimensions
         
-    def get_dataset(self, dataset_path, mode, config, use_generator=False, max_files=None, show_progress_bar=True):
+    def get_dataset(self, dataset_path, mode, config, use_generator=False, max_files=None, show_progress_bar=True, shuffle_files=True):
         '''
         Loads a dataset for this :class:`ModelType` using the values 
         in the specified :class:`composer.config.ConfigInstance` object.
@@ -209,6 +209,8 @@ class ModelType(Enum):
         :param show_progress_bar:
             Indicates whether a loading progress bar should be displayed while the dataset is loaded
             into memory. Defaults to ``True``.
+        :param shuffle_files:
+            Indicates whether the files should be shuffled before beginning the loading process. Defaults to ``True``.
         :returns:
             A :class:`tensorflow.data.Dataset` object representing the dataset.
         
@@ -225,6 +227,8 @@ class ModelType(Enum):
                                '\'{}\', has no {mode} folder.'.fromat(dataset_path, mode=mode))
 
         files = list(dataset_path.glob('**/*.{}'.format(composer.dataset.preprocess._OUTPUT_EXTENSION)))
+        if shuffle_files:
+            np.random.shuffle(files)
 
         # Creates the MusicRNNDataset.
         def _load_music_rnn_dataset(files):

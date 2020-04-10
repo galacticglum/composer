@@ -73,7 +73,7 @@ class MusicRNN(Model):
         self.embedding_layer = layers.Embedding(event_dimensions, embedding_size, batch_input_shape=(batch_size, None))
         self.lstm_layers = []
         self.dropout_layers = []
-        self.normalization_layers = []]
+        self.normalization_layers = []
         for i in range(lstm_layers_count):
             self.lstm_layers.append(layers.LSTM(lstm_layer_sizes[i], return_sequences=True, 
                                     stateful=True, recurrent_initializer='glorot_uniform'))

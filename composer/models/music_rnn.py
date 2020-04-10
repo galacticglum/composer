@@ -73,16 +73,19 @@ class MusicRNN(Model):
         self.embedding_layer = layers.Embedding(event_dimensions, embedding_size, batch_input_shape=(batch_size, None))
         self.lstm_layers = []
         self.dropout_layers = []
-        # The batch normalization layers. If None, this means that we won't use them.
-        self.normalization_layers = None if not use_batch_normalization else []
+        self.normalization_layers = []]
         for i in range(lstm_layers_count):
             self.lstm_layers.append(layers.LSTM(lstm_layer_sizes[i], return_sequences=True, 
                                     stateful=True, recurrent_initializer='glorot_uniform'))
-            self.dropout_layers.append(layers.Dropout(lstm_dropout_probability[i]))
+
+            if lstm_dropout_probability[i] > 0:
+                self.dropout_layers.append(layers.Dropout(lstm_dropout_probability[i]))
 
             if use_batch_normalization:
                 self.normalization_layers.append(layers.BatchNormalization())
 
+        self.use_normalization_layers = len(self.normalization_layers) == self.lstm_layers
+        self.use_dropout_layers = len(self.dropout_layers) == self.lstm_layers
         self.output_layer = layers.Dense(event_dimensions)
 
     def call(self, inputs):
@@ -100,12 +103,11 @@ class MusicRNN(Model):
         for i in range(self.lstm_layers_count):
             # Apply LSTM layer
             inputs = self.lstm_layers[i](inputs)
-            
-            # Apply dropout layer
-            inputs = self.dropout_layers[i](inputs)
 
-            # If we are using batch normalization, apply it!
-            if self.normalization_layers is not None:
+            if self.use_dropout_layers:
+                inputs = self.dropout_layers[i](inputs)
+            
+            if self.use_normalization_layers:
                 inputs = self.normalization_layers[i](inputs)
 
         inputs = self.output_layer(inputs)   

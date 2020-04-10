@@ -395,3 +395,38 @@ def test_id_to_event():
                                             _MAX_TIME_STEPS, _VELOCITY_BINS)
 
     assert _compare_event_sequences(event_sequence, target_event_sequence)
+
+def test_sustain_period_extension():
+    note_sequence = sequence.NoteSequence([
+        sequence.Note(0, 4000, 4, 64),
+        sequence.Note(0, 4000, 1, 64),
+        sequence.Note(0, 4000, 3, 64),
+        sequence.Note(5000, 11000, 3, 64)
+    ], [
+        sequence.SustainPeriod(0, 6000)
+    ])
+
+    target_event_sequence = sequence.EventSequence([
+        sequence.Event(sequence.EventType.VELOCITY, 2),
+        sequence.Event(sequence.EventType.NOTE_ON, 4),
+        sequence.Event(sequence.EventType.NOTE_ON, 1),
+        sequence.Event(sequence.EventType.NOTE_ON, 3),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.NOTE_OFF, 4),
+        sequence.Event(sequence.EventType.NOTE_OFF, 1),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.TIME_SHIFT, 100),
+        sequence.Event(sequence.EventType.NOTE_OFF, 3)
+    ], _TIME_STEP_INCREMENT, _MAX_TIME_STEPS, _VELOCITY_BINS)
+
+    event_sequence = note_sequence.to_event_sequence(_TIME_STEP_INCREMENT, _MAX_TIME_STEPS, _VELOCITY_BINS, 
+                                                     sustain_period_encode_mode=sequence.NoteSequence.SustainPeriodEncodeMode.EXTEND)
+    assert _compare_event_sequences(event_sequence, target_event_sequence)

@@ -406,21 +406,43 @@ class NoteSequence:
 
         markers = []
 
+        # Make sure that the notes are in sorted order.
+        # If they aren't then our events will also be in the wrong order!
+        ordered_notes = sorted(self.notes, key=lambda x: x.start)
+        ordered_sustain_periods = sorted(self.sustain_periods, key=lambda x: x.start)
+
         # We only need to add sustain markers if we are encoding them as events.
         if sustain_period_encode_mode == NoteSequence.SustainPeriodEncodeMode.EVENTS:
-            ordered_sustain_periods = sorted(self.sustain_periods, key=lambda x: x.start)
             for sustain_period in ordered_sustain_periods:
                 markers.extend([
                     MarkerInfo('SUSTAIN', True, sustain_period.start, sustain_period),
                     MarkerInfo('SUSTAIN', False, sustain_period.end, sustain_period)
                 ])
         elif sustain_period_encode_mode == NoteSequence.SustainPeriodEncodeMode.EXTEND:
-            # TODO: Implement sustain period extend encoding
-            pass
+            start_note_index = 0
+            for sustain_period in ordered_sustain_periods:
+                notes_in_interval = []
+                for i in range(start_note_index, len(ordered_notes)):
+                    note = ordered_notes[i]
+
+                    if note.start < sustain_period.start: continue
+                    if note.start > sustain_period.end:
+                        break
+                
+                    notes_in_interval.append(note)
+
+                if len(notes_in_interval) > 0:
+                    start_note_index = i
+                    
+                    # The start time of previous notes by pitch.
+                    previous_note_start_times = {}
+                    for note in reversed(notes_in_interval):
+                        if note.pitch in previous_note_start_times:
+                            note.end = previous_note_start_times[note.pitch]
+                        else:
+                            note.end = max(sustain_period.end, note.end)
+                        previous_note_start_times[note.pitch] = note.start
         
-        # Make sure that the notes are in sorted order.
-        # If they aren't then our events will also be in the wrong order!
-        ordered_notes = sorted(self.notes, key=lambda x: x.start)
         for note in ordered_notes:
             markers.extend([
                 MarkerInfo('NOTE', True, note.start, note),

@@ -84,8 +84,8 @@ class MusicRNN(Model):
             if use_batch_normalization:
                 self.normalization_layers.append(layers.BatchNormalization())
 
-        self.use_normalization_layers = len(self.normalization_layers) == self.lstm_layers
-        self.use_dropout_layers = len(self.dropout_layers) == self.lstm_layers
+        self.use_normalization_layers = len(self.normalization_layers) == lstm_layers_count
+        self.use_dropout_layers = len(self.dropout_layers) == lstm_layers_count
         self.output_layer = layers.Dense(event_dimensions)
 
     def call(self, inputs):

@@ -234,7 +234,6 @@ def preprocess(model_type, dataset_path, output_directory, num_workers, config_f
 @click.argument('output-path')
 @click.option('-c', '--config', 'config_filepath', default=None, 
               help='The path to the model configuration file. If unspecified, uses the default config for the model.')
-@click.option('--max-samples', default=200, help='The maximum number of samples per TFRecord file (before it creates a new one).')
 def export_dataset(model_type, dataset_path, output_path, config_filepath):
     '''
     Exports a processed dataset input pipeline as a TFRecord file for fast loading times when training.

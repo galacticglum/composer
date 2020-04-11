@@ -488,13 +488,13 @@ def evaluate(model_type, dataset_path, restoredir, config_filepath, use_generato
     import tensorflow as tf
 
     config = composer.config.get(config_filepath or get_default_config(model_type))  
-    model, dimensions = model_type.create_model(config, dimensions)
+    model, dimensions = model_type.create_model(config)
 
     compile_model(model, config)
     model.load_weights(tf.train.latest_checkpoint(restoredir))
     model.build(input_shape=(config.train.batch_size, None))
 
-    test_dataset = model_type.get_dataset(dataset_path, config, use_generator, mode='test', max_files=max_files, shuffle_dataset=False)
+    test_dataset = model_type.get_dataset(dataset_path, config, 'test', use_generator, max_files=max_files, shuffle_dataset=False)
     loss, accuracy = model.evaluate(test_dataset, verbose=0)
     logging.info('- Finished evaluating model. Loss: {:.4f}, Accuracy: {:.4f}'.format(loss, accuracy))
 

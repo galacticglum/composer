@@ -20,9 +20,8 @@ model:
     embedding_size: 256
     lstm_layers_count: 3
     lstm_layer_sizes: 512
-    # A dropout probability of zero means that no dropout layer will be added.
-    lstm_dropout_probability: 0
-    use_batch_normalization: false
+    lstm_dropout_probability: 0.3
+    use_batch_normalization: true
 train:
     batch_size: 64
     learning_rate: 0.001

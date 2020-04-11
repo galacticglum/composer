@@ -286,6 +286,24 @@ class NoteSequence:
 
         return self if inplace else NoteSequence(notes, sustain_periods)
 
+    def trim_start(self, inplace=True):
+        '''
+        Trims silence from the beginning of the note sequence.
+        
+        :param inplace:
+            Indicates whether the operation should be applied inplace. Defaults to ``True``.
+
+            Note: non-inplace operations require more memory since a deepcopy has to be performed.
+         :returns:
+            An instance of :class:`NoteSequence` with the applied modifications.   
+        '''
+
+        offset = self.notes[0].start
+        if len(self.sustain_periods) > 0:
+            offset = min(offset, self.sustain_periods[0].start)
+
+        return self.time_shift(-offset, inplace=inplace)
+
     def pitch_shift(self, offset, inplace=True):
         '''
         Shifts the pitch of all notes in this :class:`NoteSequence` by a specified offset.

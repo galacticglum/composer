@@ -57,11 +57,7 @@ def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.9
     # Load the MIDI file into a NoteSequence and convert it into an EventSequence.
     note_sequence = NoteSequence.from_midi(filepath)
     if trim_start:
-        offset = note_sequence.notes[0].start
-        if len(note_sequence.sustain_periods) > 0:
-            offset = min(offset, note_sequence.sustain_periods[0].start)
-
-        note_sequence.time_shift(-offset)
+        note_sequence.trim_start()
 
     event_sequence = note_sequence.to_event_sequence()
     # Encode the event sequence and write to file.

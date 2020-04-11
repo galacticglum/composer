@@ -529,8 +529,9 @@ def generate(model_type, restoredir, output_filepath, config_filepath, prompt, p
     if prompt is None:
         raise NotImplementedError()
 
-    event_sequence = NoteSequence.from_midi(prompt).to_event_sequence(config.dataset.time_step_increment, \
-            config.dataset.max_time_steps, config.dataset.velocity_bins)
+    prompt_note_sequence = NoteSequence.from_midi(prompt).trim_start()
+    event_sequence = prompt_note_sequence.to_event_sequence(config.dataset.time_step_increment, \
+                        config.dataset.max_time_steps, config.dataset.velocity_bins)
 
     event_sequence.events = event_sequence.events[:prompt_length]
 

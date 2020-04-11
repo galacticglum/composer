@@ -16,7 +16,7 @@ _OUTPUT_EXTENSION = 'data'
 
 def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.90, 1.10), pitch_shift_range=(-4, 4),
                  time_step_increment=10, max_time_steps=100, velocity_bins=32,
-                 sustain_period_encode_mode=NoteSequence.SustainPeriodEncodeMode.EXTEND):
+                 sustain_period_encode_mode=NoteSequence.SustainPeriodEncodeMode.EXTEND, trim_start=False):
     '''
     Converts a music file to a set of sequences.
 
@@ -44,6 +44,9 @@ def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.9
     :param sustain_period_encode_mode:
         The way in which sustain periods should be encoded.
         Defaults to :var:``composer.dataset.sequence.NoteSequence.SustainPeriodEncodeMode.EXTEND``.
+    :param trim_start:
+        Indicates whether silence from the start of the MIDI files should be trimmed away.
+        Defaults to ``False``.
 
     '''
 
@@ -53,6 +56,13 @@ def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.9
 
     # Load the MIDI file into a NoteSequence and convert it into an EventSequence.
     note_sequence = NoteSequence.from_midi(filepath)
+    if trim_start:
+        offset = note_sequence.notes[0].start
+        if len(note_sequence.sustain_periods) > 0:
+            offset = min(offset, note_sequence.sustain_periods[0].start)
+
+        note_sequence.time_shift(-offset)
+
     event_sequence = note_sequence.to_event_sequence()
     # Encode the event sequence and write to file.
     event_sequence.to_integer_encoding().to_file(file_save_path)
@@ -142,7 +152,8 @@ def convert_all(config, dataset_path, output_path, sustain_period_encode_mode, t
         'time_step_increment': config.dataset.time_step_increment,
         'max_time_steps': config.dataset.max_time_steps,
         'velocity_bins': config.dataset.velocity_bins,
-        'sustain_period_encode_mode': sustain_period_encode_mode
+        'sustain_period_encode_mode': sustain_period_encode_mode,
+        'trim_start': config.dataset.trim_start
     } for file in filepaths]
 
     parallel_process(kwargs, convert_file, use_kwargs=True)
@@ -212,7 +223,8 @@ def split_dataset(config, dataset_path, root_outpath_directory, sustain_period_e
             'time_step_increment': config.dataset.time_step_increment,
             'max_time_steps': config.dataset.max_time_steps,
             'velocity_bins': config.dataset.velocity_bins,
-            'sustain_period_encode_mode': sustain_period_encode_mode
+            'sustain_period_encode_mode': sustain_period_encode_mode,
+            'trim_start': config.dataset.trim_start
         } for file in files]
     
     parallel_process(_make_kwargs_set(train_files, train_files_transform, train_outpath_path), convert_file, use_kwargs=True)

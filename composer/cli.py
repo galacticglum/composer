@@ -182,7 +182,7 @@ class ModelType(Enum):
               help='The way in which sustain periods should be encoded. Defaults to EXTEND.\n\nRefer to NoteSequence.to_event_sequence ' +
               'documentation for more details on this parameter.')
 @click.option('--transform/--no-transform', default=True, help='Indicates whether the dataset should be transformed. ' +
-              'If true, a percentage of the dataset is duplicated and pitch shifted and/or time-stretched. Defaults to False.\n' +
+              'If true, a percentage of the dataset is duplicated and pitch shifted and/or time-stretched. Defaults to True.\n' +
               'Note: transforming a single sample produces many new samples: one for each pitch in the pitch shift range, and a time' +
               'stretched one (uniformly sampled from the time stretch range).')
 @click.option('--transform-percent', default=1.0, help='The percentage of the dataset that should be transformed. Defaults to 100%% of the dataset.')
@@ -212,13 +212,15 @@ def preprocess(model_type, dataset_path, output_directory, num_workers, config_f
         metadata = {
             'local_time': str(datetime.datetime.now()),
             'utc_time': str(datetime.datetime.utcnow()),
+            'model_type': str(model_type),
             'raw_dataset_path': str(Path(dataset_path).absolute()),
             'output_directory': str(output_directory.absolute()),
+            'sustain_period_encode_mode': str(sustain_period_encode_mode),
             'transform': transform,
             'transform_percent': transform_percent,
             'split': split,
             'test_percent': test_percent,
-            'seed': int(np.random.get_state()[1][0])
+            'seed': int(np.random.get_state()[1][0]),
         }
 
         json.dump(metadata, metadata_file, indent=True)

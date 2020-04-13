@@ -460,7 +460,7 @@ def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs,
 
         # Remove indents caused by literal string formatting.
         _CONFIG_COPY_FORMAT = '\n'.join(line.strip() for line in _CONFIG_COPY_FORMAT.strip().split('\n'))
-        
+
         model_logdir.mkdir(parents=True, exist_ok=True)
         config = composer.config.get(config_filepath or get_default_config(model_type))
         with open(config.filepath) as original_config_file, \
@@ -480,7 +480,7 @@ def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs,
     if restoredir is not None:
         checkpoint = tf.train.latest_checkpoint(restoredir)
         if checkpoint is None:
-            logging.warn('Failed to restore model checkpoint from \'{}\'.'.format(restoredir))
+            logging.error('Failed to restore model checkpoint from \'{}\'.'.format(restoredir))
             exit(1)
 
         model.load_weights(checkpoint)

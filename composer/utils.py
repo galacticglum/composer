@@ -16,7 +16,7 @@ def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3, 
 
     :note:
         This is a utility function for running parallel jobs with progress
-        bar. Orignally from http://danshiebler.com/2016-09-14-parallel-progress-bar/.
+        bar. Originally from http://danshiebler.com/2016-09-14-parallel-progress-bar/.
 
         The implementation is identical to the source; however, the documentation and 
         code style has been modified to fit the style of this codebase.

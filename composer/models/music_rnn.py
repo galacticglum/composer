@@ -1,6 +1,6 @@
 '''
 MusicRNN: A recurrent neural network model designed to generate music based on an
-MIDI-like event-based description language (see: ``composer.dataset.sequence`` for
+MIDI-like event-based description language (see: :mod:`composer.dataset.sequence` for
 more information about the event-based sequence description.)
 
 '''
@@ -15,8 +15,32 @@ class MusicRNN(Model):
     MIDI-like event-based description language.
     
     :note:
-        See ``composer.dataset.sequence`` for more information about the 
+        See :mod:`composer.dataset.sequence` for more information about the 
         event-based sequence description.
+
+    :ivar embedding_layer:
+        An instance of :class:`tensorflow.keras.layers.Embedding` representing the
+        embedding layer that converts integer event ids to dense float vectors.
+    :ivar lstm_layers:
+        A list of :class:`tensorflow.keras.layers.LSTM` layers representing each hidden
+        layer of the RNN.
+    :ivar dropout_layers:
+        A list of :class:`tensorflow.keras.layers.Dropout` layers representing each dropout
+        layer after a hidden LSTM layer.
+        
+        If this layer is empty or :attr:`MusicRNN.use_dropout_layers` is `False`,
+        the dropout layers are not used by the :meth:`MusicRNN.call` method.
+    :ivar normalization_layers:
+        A list of :class:`tensorflow.keras.layers.BatchNormalization` layers representing
+        each normalization layer after a hidden LSTM layer.
+
+        If this layer is empty or :attr:`MusicRNN.use_normalization_layers` is `False`,
+        the normalization layers are not used by the :meth:`MusicRNN.call` method.
+    :ivar output_layer:
+        An instance of :class:`tensorflow.keras.layers.Dense` representing the final fully-connected
+        layer of the RNN. The output of this layer is a probability distribution among each
+        event id, denoting the probability of each event occuring next.
+
     '''
 
     def __init__(self, event_dimensions, batch_size, embedding_size, lstm_layers_count,
@@ -94,8 +118,8 @@ class MusicRNN(Model):
 
         :param inputs:
             The inputs to the network. This should be an array-like object containing
-            sequences (of size :var:`MusicRNN.window_size) of :var:MusicRNN.event_dimensions`
-            -dimensionalone-hot vectors representing the events.
+            sequences (of size :attr:`MusicRNN.window_size`) of :attr:`MusicRNN.event_dimensions`
+            -dimensional one-hot vectors representing the events.
 
         '''
 

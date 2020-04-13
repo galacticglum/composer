@@ -237,7 +237,7 @@ class NoteSequence:
         :param inplace:
             Indicates whether the operation should be applied inplace. Defaults to ``True``.
 
-            Note: non-inplace operations require more memory since a deepcopy has to be performed.
+            Note that non-inplace operations require more memory since a deepcopy has to be performed.
         :returns:
             An instance of :class:`NoteSequence` with the applied modifications.
 
@@ -265,8 +265,8 @@ class NoteSequence:
             The amount to shift the start and end of each note by.
         :param inplace:
             Indicates whether the operation should be applied inplace. Defaults to ``True``.
-
-            Note: non-inplace operations require more memory since a deepcopy has to be performed.
+            
+            Note that non-inplace operations require more memory since a deepcopy has to be performed.
         :returns:
             An instance of :class:`NoteSequence` with the applied modifications.
 
@@ -291,11 +291,12 @@ class NoteSequence:
         Trims silence from the beginning of the note sequence.
         
         :param inplace:
-            Indicates whether the operation should be applied inplace. Defaults to ``True``.
+            Indicates whether the operation should be applied inplace. Defaults to `True`.
 
-            Note: non-inplace operations require more memory since a deepcopy has to be performed.
+            Note that non-inplace operations require more memory since a deepcopy has to be performed.
          :returns:
             An instance of :class:`NoteSequence` with the applied modifications.   
+
         '''
 
         offset = self.notes[0].start
@@ -317,7 +318,7 @@ class NoteSequence:
         :param inplace:
             Indicates whether the operation should be applied inplace. Defaults to ``True``.
 
-            Note: non-inplace operations require more memory since a deepcopy has to be performed.
+            Note that non-inplace operations require more memory since a deepcopy has to be performed.
         :returns:
             An instance of :class:`NoteSequence` with the applied modifications.
 
@@ -350,12 +351,12 @@ class NoteSequence:
         :param velocity_bins:
             The number of bins to quantize the note velocity values into. Defaults to 32.
         :param sustain_period_encode_mode:
-            The way in which sustain periods should be encoded. Defaults to :var:`NoteSequence.SustainPeriodEncodeMode.EVENTS`.
+            The way in which sustain periods should be encoded. Defaults to :attr:`NoteSequence.SustainPeriodEncodeMode.EVENTS`.
 
-            * If set to :var:`NoteSequence.SustainPeriodEncodeMode.NONE`, sustain periods will be ignored.
-            * If set to :var:`NoteSequence.SustainPeriodEncodeMode.EXTEND`, notes within sustain periods will be extended
+            * If set to :attr:`NoteSequence.SustainPeriodEncodeMode.NONE`, sustain periods will be ignored.
+            * If set to :attr:`NoteSequence.SustainPeriodEncodeMode.EXTEND`, notes within sustain periods will be extended
               until the end of the period or to the start of the next note of the same pitch, whichever comes first.
-            * If set to :var:`NoteSequence.SustainPeriodEncodeMode.EVENTS`, sustain periods will be encoded as events.
+            * If set to :attr:`NoteSequence.SustainPeriodEncodeMode.EVENTS`, sustain periods will be encoded as events.
         :param clean:
             Indicates whether the event sequence should be cleaned up after conversion. This will remove undesirable events
             such as time shifts with value equal to zero or note on events followed directly by note off events.
@@ -418,7 +419,7 @@ class NoteSequence:
                 Gets the :class:`EventType` of this marker.
 
                 :param event_type_prefix:
-                    The prefix of the event type. If ``None``, it will default to :var:`MarkerInfo.type`.
+                    The prefix of the event type. If ``None``, it will default to :attr:`MarkerInfo.type`.
 
                 '''
 
@@ -754,7 +755,7 @@ class EventSequence:
         :note:
             The dimension refers to the length of the range of values that each type of event
             accepts as parameters. If the dimension is zero, this means that the
-            event does not accept any values (i.e. :var:`Event.value` is ``None``).
+            event does not accept any values (i.e. :attr:`Event.value` is ``None``).
         :returns:
             A :class:`collections.OrderedDict` which maps :class:`EventType` to integers
             representing the dimension of each event type.
@@ -1672,7 +1673,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             Indicates whether the event ids should be returned as a numpy array.
             Defaults to ``False``.
 
-            Note: numpy array creation is much faster than Python lists.
+            Note that numpy array creation is much faster than Python lists.
         :param numpy_dtype:
             The data type of the numpy array (if ``as_numpy_array`` is ``True``). Defaults to ``np.int``.
         :returns:
@@ -1735,7 +1736,7 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
             Indicates whether the one-hot vectors should be returned as a numpy array.
             Defaults to ``False``.
 
-            Note: numpy array creation is much faster than Python lists.
+            Note that numpy array creation is much faster than Python lists.
         :param numpy_dtype:
             The data type of the numpy array (if ``as_numpy_array`` is ``True``). Defaults to ``np.int``.
         :returns:

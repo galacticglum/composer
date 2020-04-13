@@ -48,19 +48,19 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=True,
         The progress bar will only be displayed if ``use_generator`` is ``False`` (since no dataset loading
         will occur in this function if ``use_generator`` is ``True``).
     :param input_event_encoding:
-        A :class:`composer.dataset.EventEncodingType` representing the way that events should be
+        A :class:`EventEncodingType` representing the way that events should be
         encoded before being inputted into the network.
         
-        If set to :var:`composer.dataset.EventEncodingType.ONE_HOT`, the input event sequences will
+        If set to :attr:`EventEncodingType.ONE_HOT`, the input event sequences will
         be encoded as a series of one-hot vectors—their dimensionality determined by the value ranges 
         on the :class:`composer.dataset.sequence.EventSequence`.
 
-        If set to :var:`composer.dataset.EventEncodingType.INTEGER`, the input event sequences will
+        If set to :attr:`EventEncodingType.INTEGER`, the input event sequences will
         be encoded as a series of integer ids representing each event. These are fundmenetally similar 
         to the one-hot vector representation. The integer id of an event is the zero-based index of the 
         "hot" (active) bit of its one-hot vector representation.
 
-        Defaults to :var:`composer.dataset.EventEncoding.ONE_HOT`. Due to the size a single one-hot
+        Defaults to :attr:`EventEncoding.ONE_HOT`. Due to the size a single one-hot
         vector, loading the dataset will take longer than compared to integer ids.
     :param shuffle:
         Indicates whether the dataset should be shuffled. Defaults to ``True``.

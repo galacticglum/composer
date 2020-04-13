@@ -43,7 +43,7 @@ def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.9
         The number of bins to quantize the note velocity values into. Defaults to 32.
     :param sustain_period_encode_mode:
         The way in which sustain periods should be encoded.
-        Defaults to :var:``composer.dataset.sequence.NoteSequence.SustainPeriodEncodeMode.EXTEND``.
+        Defaults to :attr:``composer.dataset.sequence.NoteSequence.SustainPeriodEncodeMode.EXTEND``.
     :param trim_start:
         Indicates whether silence from the start of the MIDI files should be trimmed away.
         Defaults to ``False``.
@@ -172,7 +172,7 @@ def split_dataset(config, dataset_path, root_outpath_directory, sustain_period_e
         Indicates whether the dataset should be transformed. If ``True``, a percentage of the dataset
         is duplicated and pitch shifted and/or time-stretched.
 
-        Note: enabling this will ONLY transform the TRAIN set.
+        Note that enabling this will ONLY transform the TRAIN set.
     :param transform_percent:
         The percentage of the dataset that should be transformed.
     :param num_workers:

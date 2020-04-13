@@ -70,7 +70,7 @@ class ModelType(Enum):
 
         :param config:
             A :class:`composer.config.ConfigInstance` containing the configuration values.
-        :param **kwargs:
+        :param \**kwargs:
             External data passed to the creation method (i.e. data not in the configuration file)
         :returns:
             A :class:`tensorflow.keras.Model` object representing an instance of the specified model
@@ -183,7 +183,7 @@ class ModelType(Enum):
               'documentation for more details on this parameter.')
 @click.option('--transform/--no-transform', default=True, help='Indicates whether the dataset should be transformed. ' +
               'If true, a percentage of the dataset is duplicated and pitch shifted and/or time-stretched. Defaults to True.\n' +
-              'Note: transforming a single sample produces many new samples: one for each pitch in the pitch shift range, and a time' +
+              'Note that transforming a single sample produces many new samples: one for each pitch in the pitch shift range, and a time' +
               'stretched one (uniformly sampled from the time stretch range).')
 @click.option('--transform-percent', default=1.0, help='The percentage of the dataset that should be transformed. Defaults to 100%% of the dataset.')
 @click.option('--split/--no-split', default=True, help='Indicates whether the dataset should be split into train and test sets. Defaults to True.')
@@ -238,7 +238,7 @@ def export_dataset(model_type, dataset_path, output_path, config_filepath):
     '''
     Exports a processed dataset input pipeline as a TFRecord file for fast loading times when training.
 
-    Note: the DATASET-PATH argument refers to the path containing the preprocessed '.data' files. For example, this could
+    Note that the DATASET-PATH argument refers to the path containing the preprocessed '.data' files. For example, this could
     be "dataset_parent/train" or "dataset_parent/test." 
 
     '''

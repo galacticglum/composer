@@ -34,7 +34,7 @@ def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3, 
         The number of iterations to run serially before kicking off the
         parallel job. Useful for catching bugs
     :param multithread:
-        If ``True``, a ``ThreadPoolExecutor`` will be used rather than a ``ProcessPoolExecutor``.
+        If ``True``, a :class:``concurrent.futures.ThreadPoolExecutor`` will be used rather than a :class:``concurrent.futures.ProcessPoolExecutor``.
         Defaults to ``False``.
     :param show_progress_bar:
         Indicates whether a loading progress bar should be displayed while the process runs.
@@ -42,7 +42,7 @@ def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3, 
     :param extend_result:
         Indicates whether the resultant list should be extended rather than appended to. Defaults to ``False``.
 
-        Note: this requires that the return value of ``function`` is an array-like object.
+        Note that this requires that the return value of ``function`` is an array-like object.
     :param initial_value:
         The initial value of the resultant array. This should be an array-like object.
     :returns:

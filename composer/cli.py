@@ -405,6 +405,22 @@ def visualize_training(model_type, dataset_path, config_filepath, steps, decode_
         print(' - input:             {}'.format(x))
         print(' - expected output:   {}'.format(y))
 
+def get_config_from_restoredir(restoredir):
+    '''
+    Gets the :class:`composer.config.ConfigInstance` object from a model checkpoint.
+
+    :param restoredir:
+        The directory of the model to restore.
+
+    '''
+
+    config_filepath = Path(restoredir) / 'config.yml'
+    if not config_filepath.exists():
+        logging.error('Failed to restore model from \'{}\'! Could not find \'config.yml\' file!'.format(restoredir))
+        exit(1)
+        
+    return composer.config.get(config_filepath)
+
 @cli.command()
 @click.argument('model-type', type=EnumType(ModelType, False))
 @click.argument('dataset-path')
@@ -435,12 +451,7 @@ def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs,
     from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
 
     if restoredir is not None:
-        config_filepath = Path(restoredir) / 'config.yml'
-        if not config_filepath.exists():
-            logging.error('Failed to restore model from \'{}\'! Could not find \'config.yml\' file!'.format(restoredir))
-            exit(1)
-        
-        config = composer.config.get(config_filepath)
+        config = get_config_from_restoredir(restoredir)
     else:
         initial_epoch = 0
         model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
@@ -505,14 +516,12 @@ def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs,
 @click.argument('model-type', type=EnumType(ModelType, False))
 @click.argument('dataset-path')
 @click.argument('restoredir')
-@click.option('-c', '--config', 'config_filepath', default=None, 
-              help='The path to the model configuration file. If unspecified, uses the default config for the model.')
 @click.option('--use-generator/--no-use-generator', default=False,
               help='Indicates whether the dataset should be loaded in chunks during processing ' +
               '(rather than into memory all at once). Defaults to False.')
 @click.option('--max-files', default=None, help='The maximum number of files to load. Defaults to None, which means ' + 
               'that ALL files will be loaded.', type=int)
-def evaluate(model_type, dataset_path, restoredir, config_filepath, use_generator, max_files):
+def evaluate(model_type, dataset_path, restoredir, use_generator, max_files):
     '''
     Evaluate the specified model.
 
@@ -520,7 +529,7 @@ def evaluate(model_type, dataset_path, restoredir, config_filepath, use_generato
 
     import tensorflow as tf
 
-    config = composer.config.get(config_filepath or get_default_config(model_type))  
+    config = get_config_from_restoredir(restoredir)  
     model, dimensions = model_type.create_model(config)
 
     compile_model(model, config)

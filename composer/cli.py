@@ -544,15 +544,13 @@ def evaluate(model_type, dataset_path, restoredir, use_generator, max_files):
 @click.argument('model-type', type=EnumType(ModelType, False))
 @click.argument('restoredir')
 @click.argument('output-filepath')
-@click.option('-c', '--config', 'config_filepath', default=None, 
-              help='The path to the model configuration file. If unspecified, uses the default config for the model.')
 @click.option('--prompt', '-p', 'prompt', default=None, help='The path of the MIDI file to prompt the network with. ' +
               'Defaults to None, meaning a random prompt will be created.')
 @click.option('--prompt-length', default=10, help='Number of events to take from the start of the prompt. Defaults to 10.')
 @click.option('--length', '-l', 'generate_length', default=1024, help='The length of the generated event sequence. Defaults to 1024')
 @click.option('--temperature', default=1.0, help='Dictates how random the result is. Low temperature yields more predictable output. ' +
               'On the other hand, high temperature yields very random ("surprising") outputs. Defaults to 1.0.')
-def generate(model_type, restoredir, output_filepath, config_filepath, prompt, prompt_length, generate_length, temperature):
+def generate(model_type, restoredir, output_filepath, prompt, prompt_length, generate_length, temperature):
     '''
     Generate a MIDI file.
 
@@ -560,7 +558,7 @@ def generate(model_type, restoredir, output_filepath, config_filepath, prompt, p
 
     import tensorflow as tf
 
-    config = composer.config.get(config_filepath or get_default_config(model_type))
+    config = get_config_from_restoredir(restoredir)
     model, dimensions = model_type.create_model(config)
 
     compile_model(model, config)

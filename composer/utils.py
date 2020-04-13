@@ -6,7 +6,6 @@ Utility methods.
 import logging
 from tqdm import tqdm
 from queue import Queue
-from collections import deque
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
 def parallel_process(array, function, n_jobs=16, use_kwargs=False, front_num=3, multithread=False, 
@@ -95,6 +94,18 @@ class ObjectPool:
     '''
     Generic object pool manager.
 
+    :ivar name:
+        The name of the object pool. This is primarily used for logging.
+    :ivar objects:
+        A thread-safe `queue.Queue` containing the freed objects in the pool.
+    :ivar create_func:
+        A parameterless function that creates the objects stored in the pool.
+    :ivar warm_stride_size:
+        The number of objects to create when the object pool becomes empty.
+        Defaults to 1.
+    :param total_objects_allocated:
+        A count of the number of objects that have been allocated by the pool.
+
     '''
 
     def __init__(self, create_func, name=None, warm_stride_size=1):
@@ -102,7 +113,7 @@ class ObjectPool:
         Initializes an instance of :class:`ObjectPool`.
 
         :param create_func:
-            A parameterless function creates the objects stored in the pool.
+            A parameterless function that creates the objects stored in the pool.
         :param warm_stride_size:
             The number of objects to create when the object pool becomes empty.
             Defaults to 1.
@@ -118,6 +129,9 @@ class ObjectPool:
     def warm(self, amount):
         '''
         Initializes the specified amount of objects.
+
+        :param amount:
+            The number of objects to initialize ("warm up") the pool with.
 
         '''
 

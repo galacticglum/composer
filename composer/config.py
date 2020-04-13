@@ -31,6 +31,9 @@ class Dotdict(dict):
 class ConfigInstance(Dotdict):
     '''
     A loaded configuration.
+
+    :ivar filepath:
+        The path of the original config file. 
     
     '''
 

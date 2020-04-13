@@ -11,11 +11,21 @@ class EnumType(click.Choice):
     '''
     Enum type for Click options/arguments.
 
+    :ivar enum:
+        The :class:`Type` object representing the type of the enum to display.
+    :ivar casesensitive:
+        Indicates whether the enum values are case-sensitive. Defaults to `True`.
+
     '''
 
     def __init__(self, enum, casesensitive=True):
         '''
         Initializes an instance of :class:`EnumType`.
+
+        :param enum:
+            The :class:`Type` object representing the type of the enum to display.
+        :ivar casesensitive:
+            Indicates whether the enum values are case-sensitive. Defaults to `True`.
         
         '''
 
@@ -37,6 +47,13 @@ class EnumType(click.Choice):
     def convert(self, value, param, ctx):
         '''
         Converts this :class:`EnumType` to the underlying enum value.
+
+        :param value:
+            The input value of the choice.
+        :param param:
+            Parameters passed to the convert function.
+        :param ctx:
+            The click CLI context.
 
         '''
 

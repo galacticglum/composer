@@ -59,6 +59,9 @@ class ModelType(Enum):
     '''
     The type of the model.
 
+    :cvar MUSIC_RNN:
+        The type corresponding to the :class:`composer.models.MusicRNN` model.
+
     '''
 
     MUSIC_RNN = 'music_rnn'

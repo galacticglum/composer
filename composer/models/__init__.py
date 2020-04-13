@@ -11,6 +11,11 @@ from composer.models.music_rnn import MusicRNN
 class EventEncodingType(IntEnum):
     '''
     The way that events should be encoded in a model.
+
+    :cvar INTEGER:
+        Indicates that events should be encoded as integer ids.
+    :cvar ONE_HOT:
+        Indicates that events should be encoded as one-hot vectors.
     
     '''
 

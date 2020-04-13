@@ -24,6 +24,15 @@ class Note:
     '''
     A representation of a musical note on a sequence.
 
+    :ivar start:
+        The start time of the note, in milliseconds.
+    :ivar end:
+        The end time of the note, in milliseconds.
+    :ivar pitch:
+        The pitch of the note (as a MIDI pitch: from 0 to 127).
+    :ivar velocity:
+        The velocity of the note (as a MIDI velocity: from 0 to 127).
+
     '''
 
     def __init__(self, start, end, pitch, velocity):
@@ -62,6 +71,19 @@ class EventType(IntEnum):
         '''
         The type of an :class:`Event`.
         
+        :cvar NOTE_ON:
+            Indicates a note is active (enabled).
+        :cvar NOTE_OFF:
+            Indicates a note is inactive (disabled).
+        :cvar TIME_SHIFT:
+            Indicates a shift in time (in time steps).
+        :cvar VELOCITY:
+            Indicates a change in velocity. 
+        :cvar SUSTAIN_ON:
+            Indicates the start of a sustain period.
+        :cvar SUSTAIN_OFF:
+            Indicates the end of a sustain period.
+        
         '''
 
         NOTE_ON = 1
@@ -93,9 +115,15 @@ class Event:
     An event representing some change on the NoteSequence.
     Every event has a type and value associated with it.
 
+    :cvar NONE_VALUE:
+        A reserved value for representing `None` values as an integer.
+    :ivar type:
+        An :class:`EventType` value representing the type of the event.
+    :ivar value:
+        Data associated with the event (i.e. a parameter).
+
     '''
 
-    # A reserved value for representing None as an integer.
     NONE_VALUE = -1
 
     def __init__(self, event_type, value):
@@ -108,17 +136,16 @@ class Event:
             The value of the event. The type of this object depends on the 
             type of the event.
 
-            :note:
-                The value of an event is not restricted. It can be any object
-                so long as the object can be represented as int. Also, when
-                the event is decoded (after being encoded), the all values
-                will be in the form of integers. Therefore, if you are using
-                custom objects as event values, it is your responsibility
-                to convert these values back to their original objects.
+            Note that the value of an event is not restricted. It can be any 
+            object so long as the object can be represented as int. Also, 
+            when the event is decoded (after being encoded), the all values
+            will be in the form of integers. Therefore, if you are using
+            custom objects as event values, it is your responsibility
+            to convert these values back to their original objects.
 
-                The event value system is primarily designed to store integer 
-                values only. While it can be extended past this, it is not
-                supported and therefore requires a lot of manual maintenance.
+            The event value system is primarily designed to store integer 
+            values only. While it can be extended past this, it is not
+            supported and therefore requires a lot of manual maintenance.
 
         '''
         
@@ -157,6 +184,11 @@ class SustainPeriod:
     '''
     A period of time where the sustain pedal is active.
 
+    :ivar start:
+        The start time, in milliseconds, of the sustain period.
+    :ivar end:
+        The end time, in milliseconds, of the sustain period.
+
     '''
 
     def __init__(self, start, end):
@@ -179,12 +211,30 @@ class NoteSequence:
     '''
     A MIDI-like sequence representation.
 
+    :ivar notes:
+        A list of :class:`Note` objects in the sequence.
+    :ivar sustain_periods:
+        A list of :class:`SustainPeriod` objects in the sequence.
+
     '''
 
     @unique
     class SustainPeriodEncodeMode(Enum):
         '''
         The mode for encoding sustain periods.
+
+        :cvar NONE:
+            Indicates that sustain periods should not be encoded at all.
+            That is, they should be ignored when creating note sequences
+            from MIDI files.
+        :cvar EXTEND:
+            Indicates that all notes within a period of time where the sustain 
+            pedal is active should be extended so that they span the entirety 
+            of the  sustain pedal period or to the start of the next note of 
+            the same pitch, whichever happens first.
+        :cvar EVENTS:
+            Indicates that sustain periods should be encoded as :class:`EventType.SUSTAIN_ON`
+            and :class:`EventType.SUSTAIN_OFF` events.
 
         '''
 
@@ -634,6 +684,15 @@ class NoteSequence:
 class EventSequence:
     '''
     The event-based representation of a :class:`NoteSequence`. 
+
+    :ivar events:
+        A list of :class:`Event` objects to add to the sequence.
+    :ivar time_step_increment:
+        The number of milliseconds that a single step in time represents.
+    :ivar max_time_steps:
+        The maximum number of time steps that a single event can shift time by.
+    :ivar velocity_bins:
+        The number of bins to quantize t he note velocity values into.
     
     '''
 
@@ -756,6 +815,7 @@ class EventSequence:
             The dimension refers to the length of the range of values that each type of event
             accepts as parameters. If the dimension is zero, this means that the
             event does not accept any values (i.e. :attr:`Event.value` is ``None``).
+
         :returns:
             A :class:`collections.OrderedDict` which maps :class:`EventType` to integers
             representing the dimension of each event type.
@@ -1011,6 +1071,15 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
     '''
     A one-hot encoded representation of an :class:`EventSequence`.
 
+    :ivar time_step_increment:
+        The number of milliseconds that a single step in time represents.
+    :ivar event_ranges:
+        The range of each event type in the one-hot encoded vector.
+    :ivar event_value_ranges:
+        The range of values for each :class:`EventType`.
+    :ivar vectors:
+        A list of one-hot encoded vectors representing the events.
+
     '''
 
     # The type of the event, start, and stop. 
@@ -1030,7 +1099,7 @@ class OneHotEncodedEventSequence(EncodedEventSequence):
         :param event_value_ranges:
             The range of values for each :class:`EventType`.
         :param vectors:
-            A list of one-hot encoded vectors representing events.
+            A list of one-hot encoded vectors representing the events.
 
         '''
 
@@ -1357,6 +1426,17 @@ class IntegerEncodedEventSequence(EncodedEventSequence):
         This encoding consists of a list of two-dimensional integer tuples. Each
         event is encoded as a tuple containing the integer id of its type along
         with its value.
+
+    :ivar time_step_increment:
+        The number of milliseconds that a single step in time represents.
+    :ivar max_time_steps:
+        The maximum number of time steps that a single event can shift time by.
+        If this is ``None``, there is no limit.
+    :ivar velocity_bins:
+        The number of bins to quantize the note velocity values into.
+    :ivar events:
+        A list of integer encoded events (two-dimensional integer tuples).
+
 
     '''
 

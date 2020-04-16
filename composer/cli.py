@@ -87,9 +87,9 @@ class ModelType(Enum):
             from composer import models
 
             return models.MusicRNN(
-                dimensions, config.train.batch_size, config.model.embedding_size, 
-                config.model.lstm_layers_count, config.model.lstm_layer_sizes, 
-                config.model.lstm_dropout_probability, config.model.use_batch_normalization
+                dimensions, config.music_rnn.train.batch_size, config.music_rnn.model.embedding_size, 
+                config.music_rnn.model.lstm_layers_count, config.music_rnn.model.lstm_layer_sizes, 
+                config.music_rnn.model.lstm_dropout_probability, config.music_rnn.model.use_batch_normalization
             )
 
         # An easy way to map the creation functions to their respective types.
@@ -158,11 +158,12 @@ class ModelType(Enum):
             if max_files is not None:
                 files = files[:max_files]
 
-            dataset = load_dataset(files, config.train.batch_size, config.model.window_size,
-                                      input_event_encoding=EventEncodingType.INTEGER,
-                                      show_loading_progress_bar=show_progress_bar,
-                                      use_generator=use_generator, shuffle=shuffle_dataset,
-                                      is_dataset_tfrecord=is_dataset_tfrecord)
+            dataset = load_dataset(files, config.music_rnn.train.batch_size, 
+                                   config.music_rnn.model.window_size,
+                                   input_event_encoding=EventEncodingType.INTEGER,
+                                   show_loading_progress_bar=show_progress_bar,
+                                   use_generator=use_generator, shuffle=shuffle_dataset,
+                                   is_dataset_tfrecord=is_dataset_tfrecord)
 
             return dataset
 
@@ -312,12 +313,8 @@ def get_default_config(model_type):
     Gets the default configuration filepath for the specified :class:`ModelType`.
 
     '''
-    
-    _FILEPATH_MAP = {
-        ModelType.MUSIC_RNN: Path(__file__).parent / 'music_rnn_config.yml'
-    }
 
-    return _FILEPATH_MAP[model_type] 
+    return Path(__file__).parent / 'default_config.yml' 
 
 def compile_model(model, config):
     '''
@@ -328,7 +325,7 @@ def compile_model(model, config):
     from tensorflow.keras import optimizers, losses
 
     loss = losses.SparseCategoricalCrossentropy(from_logits=True)
-    optimizer = optimizers.Adam(learning_rate=config.train.learning_rate)
+    optimizer = optimizers.Adam(learning_rate=config.music_rnn.train.learning_rate)
     model.compile(loss=loss, optimizer=optimizer, metrics=['accuracy'])
 
 @cli.command()
@@ -344,7 +341,7 @@ def summary(model_type, config_filepath):
     config = composer.config.get(config_filepath or get_default_config(model_type))
 
     model, dimensions = model_type.create_model(config)
-    model.build(input_shape=(config.train.batch_size, None))
+    model.build(input_shape=(config.music_rnn.train.batch_size, None))
     model.summary()
 
 @cli.command()
@@ -486,7 +483,7 @@ def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs,
     compile_model(model, config)
 
     # We need to build the model so that it knows about the batch size.
-    model.build(input_shape=(config.train.batch_size, None))
+    model.build(input_shape=(config.music_rnn.train.batch_size, None))
 
     if restoredir is not None:
         checkpoint = tf.train.latest_checkpoint(restoredir)
@@ -534,7 +531,7 @@ def evaluate(model_type, dataset_path, restoredir, use_generator, max_files):
 
     compile_model(model, config)
     model.load_weights(tf.train.latest_checkpoint(restoredir))
-    model.build(input_shape=(config.train.batch_size, None))
+    model.build(input_shape=(config.music_rnn.train.batch_size, None))
 
     test_dataset = model_type.get_dataset(dataset_path, config, 'test', use_generator, max_files=max_files, shuffle_dataset=False)
     loss, accuracy = model.evaluate(test_dataset, verbose=0)

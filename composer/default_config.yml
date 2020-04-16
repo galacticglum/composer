@@ -1,0 +1,41 @@
+# The default configuration file for Composer.
+
+dataset:
+    time_step_increment: 10
+    max_time_steps: 100
+    velocity_bins: 32
+    # Each sample will be stretched in time uniformly by up to +/- 10%.
+    time_stretch_range:
+        start: 0.90
+        stop: 1.10
+    # Each sample will be pitch shifted down all intervals from -4 to 4 (major third).
+    pitch_shift_range:
+        start: -4
+        stop: 4
+    # Indicates whether silence from the start of the MIDI files should be trimmed away.
+    trim_start: true
+
+# Configuration for MusicRNN model.
+music_rnn:
+    model:
+        window_size: 200
+        embedding_size: 256
+        lstm_layers_count: 3
+        lstm_layer_sizes: 512
+        lstm_dropout_probability: 0.3
+        use_batch_normalization: true
+    train:
+        batch_size: 64
+        learning_rate: 0.001
+
+# Configuration for Transformer-Decoder model.
+transformer:
+    model:
+        window_size: 2048
+        embedding_size: 512
+        decoder_layers_count: 8
+        attention_head_count: 16
+        attention_head_size: 32
+    train:
+        batch_size: 1
+        learning_rate: 0.001

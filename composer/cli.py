@@ -503,7 +503,7 @@ def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs,
     model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='loss', verbose=1, 
                                                 save_freq='epoch' if is_epoch_save_freq else int(save_freq),
                                                 period=epoch_save_period if is_epoch_save_freq else None, 
-                                                save_best_only=False, mode='auto', save_weights_only=True,)
+                                                save_best_only=False, mode='auto', save_weights_only=True)
 
     train_dataset = model_type.get_dataset(dataset_path, config, 'train', use_generator, max_files=max_files)
     training_history = model.fit(train_dataset, epochs=epochs + initial_epoch, initial_epoch=initial_epoch,

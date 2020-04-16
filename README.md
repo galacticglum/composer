@@ -1,5 +1,5 @@
 # Composer
-*Not to be confused with the PHP dependancy management package.*
+*Not to be confused with the PHP dependency management package.*
 
 Composer is a deep learning enabled music generator module built in [Python](https://www.python.org/) and using [TensorFlow](https://www.tensorflow.org/). The goal of this project is to investigate how music can be generated and enhanced using machine learning techniques (such as deep learning via neural networks). It is a sandbox for generative MIDI neural-network models. What it is NOT is a fully-featured music generator.
 

@@ -99,9 +99,9 @@ class ModelType(Enum):
         }
 
         return function_map[self](), dimensions
-        
+
     def get_dataset(self, dataset_path, config, mode='', use_generator=True, max_files=None,
-                    show_progress_bar=True,shuffle_files=True, shuffle_dataset=True):
+                    show_progress_bar=True, shuffle_files=True, shuffle_dataset=True):
         '''
         Loads a dataset for this :class:`ModelType` using the values 
         in the specified :class:`composer.config.ConfigInstance` object.
@@ -113,7 +113,7 @@ class ModelType(Enum):
         :param mode:
             A string indicating the dataset mode: ``train`` or ``test``.
         :param use_generator:
-            Indicates whether the Dataset should be given as a generator object. Defaults to ``False``.
+            Indicates whether the Dataset should be given as a generator object. Defaults to ``True``.
         :param max_files:
             The maximum number of files to load. Defaults to ``None`` which means that ALL
             files will be loaded.
@@ -129,7 +129,7 @@ class ModelType(Enum):
         
         '''
 
-        from composer.models import load_dataset, EventEncodingType
+        from composer.models import load_dataset, load_tfrecord_dataset, EventEncodingType
 
         if mode not in ['train', 'test', '']:
             raise InvalidParameterError('\'{}\' is an invalid dataset mode! Must be one of: \'train\', \'test\', or none.'.format(mode))
@@ -141,14 +141,17 @@ class ModelType(Enum):
                 raise DatasetError('Could not get {mode} dataset since the specified dataset directory, ' +
                                 '\'{}\', has no {mode} folder.'.format(dataset_path, mode=mode))
 
-            files = list(dataset_path.glob('**/*.{}'.format(composer.dataset.preprocess._OUTPUT_EXTENSION)))
+            files = composer.dataset.preprocess.get_processed_files(dataset_path)
             if shuffle_files:
                 np.random.shuffle(files)
             
             is_dataset_tfrecord = False
         else:
-            if not dataset_path.is_file() or dataset_path.suffix != '.tfrecords':
-                raise InvalidParameterError('\'{}\' is an invalid dataset path!'.format(dataset_path))
+            if not dataset_path.is_file() or dataset_path.suffix != '.tfrecord':
+                raise InvalidParameterError(
+                    '\'{}\' is an invalid dataset path! The dataset can either be a ' +
+                    'directory of processed MIDI files or a TFRecord file.'.format(dataset_path)
+                )
             
             files = [dataset_path]
             is_dataset_tfrecord = True
@@ -158,12 +161,35 @@ class ModelType(Enum):
             if max_files is not None:
                 files = files[:max_files]
 
-            dataset = load_dataset(files, config.music_rnn.train.batch_size, 
-                                   config.music_rnn.model.window_size,
-                                   input_event_encoding=EventEncodingType.INTEGER,
-                                   show_loading_progress_bar=show_progress_bar,
-                                   use_generator=use_generator, shuffle=shuffle_dataset,
-                                   is_dataset_tfrecord=is_dataset_tfrecord)
+            if is_dataset_tfrecord:
+                dataset, header = load_tfrecord_dataset(files[0], shuffle=shuffle_dataset)
+                
+                # Make sure that the header metadata matches the config file
+                TFRECORD_EXPORT_WARNING = 'The TFRecord file was probably exported using a different config.'
+                
+                model_type = ModelType(header['model_type'])
+                if self != model_type:
+                    logging.warn('Model type mismatch when loading \'{}\'. Expected {} but found {}. {}'
+                        .format(files[0], self, model_type, TFRECORD_EXPORT_WARNING))
+
+                    click.confirm('Do you want to continue? This may cause errors or corrupt the training session.', abort=True)
+                
+                batch_size = header['batch_size']
+                if config.music_rnn.train.batch_size != batch_size:
+                    logging.error('Expected a batch size of {} but found {}. {}'.format(
+                        config.music_rnn.train.batch_size, batch_size, TFRECORD_EXPORT_WARNING))
+                    exit(1)
+                
+                window_size = header['window_size']
+                if config.music_rnn.model.window_size != window_size:
+                    logging.error('Expected a window size of {} but found {}. {}'.format(
+                        config.music_rnn.model.window_size, window_size, TFRECORD_EXPORT_WARNING))
+                    exit(1)
+            else: 
+                dataset = load_dataset(files, config.music_rnn.train.batch_size, 
+                    config.music_rnn.model.window_size,
+                    show_loading_progress_bar=show_progress_bar,
+                    use_generator=use_generator, shuffle=shuffle_dataset)
 
             return dataset
 
@@ -200,7 +226,7 @@ def preprocess(model_type, dataset_path, output_directory, num_workers, config_f
 
     '''
 
-    config = composer.config.get(config_filepath or get_default_config(model_type))
+    config = composer.config.get(config_filepath or get_default_config())
     output_directory = Path(output_directory)
 
     if split:
@@ -234,29 +260,41 @@ def preprocess(model_type, dataset_path, output_directory, num_workers, config_f
 
 @cli.command()
 @click.argument('model-type', type=EnumType(ModelType, False))
-@click.argument('dataset-path')
+@click.argument('preprocessed-path')
 @click.argument('output-path')
 @click.option('-c', '--config', 'config_filepath', default=None, 
               help='The path to the model configuration file. If unspecified, uses the default config for the model.')
-def export_dataset(model_type, dataset_path, output_path, config_filepath):
+@click.option('--use-generator/--no-use-generator', default=False,
+              help='Indicates whether the dataset should be loaded in chunks during processing ' +
+              '(rather than into memory all at once). Defaults to False.')
+@click.option('--max-files', default=None, help='The maximum number of files to load. Defaults to None, which means ' + 
+              'that ALL files will be loaded.', type=int)
+def export_dataset(model_type, preprocessed_path, output_path, config_filepath, use_generator, max_files):
     '''
     Exports a processed dataset input pipeline as a TFRecord file for fast loading times when training.
 
-    Note that the DATASET-PATH argument refers to the path containing the preprocessed '.data' files. For example, this could
-    be "dataset_parent/train" or "dataset_parent/test." 
+    Note that the PREPROCESSED-PATH argument refers to the path containing the preprocessed '.data' files.
+    For example, this could be "dataset_parent/train", "dataset_parent/test", or simply "path/to/files".
 
     '''
 
     import tensorflow as tf
+    from composer.io_utils import bytes_feature, int64_feature
 
-    config = composer.config.get(config_filepath or get_default_config(model_type))
-    dataset = model_type.get_dataset(dataset_path, config, shuffle_dataset=False, use_generator=False)
-    
-    def bytes_feature(value):
-        return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
-
+    config = composer.config.get(config_filepath or get_default_config())
+    dataset = model_type.get_dataset(preprocessed_path, config, shuffle_dataset=False,
+                use_generator=use_generator, max_files=max_files)
+ 
     logging.info('Loading dataset and writing to TFRecord. This make take a while...')
     with tf.io.TFRecordWriter(output_path) as writer:
+        # Serialize metadata
+        batch_size, window_size = next(dataset.take(1).as_numpy_iterator())[0].shape
+        writer.write(tf.train.Example(features=tf.train.Features(feature={
+            'model_type': bytes_feature(model_type.value.encode('utf-8')),
+            'batch_size': int64_feature(batch_size),
+            'window_size': int64_feature(window_size)
+        })).SerializeToString())
+
         for x, y in tqdm.tqdm(dataset):
             feature = {
                 'x': bytes_feature(tf.io.serialize_tensor(x).numpy()),
@@ -264,6 +302,8 @@ def export_dataset(model_type, dataset_path, output_path, config_filepath):
             }
 
             writer.write(tf.train.Example(features=tf.train.Features(feature=feature)).SerializeToString())
+
+    logging.info('Finished exporting \'{}\' as a TFRecord: \'{}\''.format(preprocessed_path, output_path))
 
 def get_event_sequence_ranges(config):
     '''
@@ -308,7 +348,7 @@ def decode_to_event(config, event_id):
     IntegerEncodedEventSequence.event_to_id()
     return IntegerEncodedEventSequence.id_to_event(event_id, event_ranges, event_value_ranges)
 
-def get_default_config(model_type):
+def get_default_config():
     '''
     Gets the default configuration filepath for the specified :class:`ModelType`.
 
@@ -338,7 +378,7 @@ def summary(model_type, config_filepath):
 
     '''
 
-    config = composer.config.get(config_filepath or get_default_config(model_type))
+    config = composer.config.get(config_filepath or get_default_config())
 
     model, dimensions = model_type.create_model(config)
     model.build(input_shape=(config.music_rnn.train.batch_size, None))
@@ -359,7 +399,7 @@ def visualize_training(model_type, dataset_path, config_filepath, steps, decode_
 
     '''
 
-    config = composer.config.get(config_filepath or get_default_config(model_type))
+    config = composer.config.get(config_filepath or get_default_config())
     dataset = model_type.get_dataset(dataset_path, config, mode='train', max_files=1, show_progress_bar=False)
 
     count = 0
@@ -427,7 +467,7 @@ def get_config_from_restoredir(restoredir):
               help='The path to the model configuration file. If unspecified, uses the default config for the model.' + 
               '\n\nIf a restoredir is specified, the configuration file in the restoredir is used instead (and this value is ignored).')
 @click.option('-e', '--epochs', 'epochs', default=10, help='The number of epochs to train for. Defaults to 10.')
-@click.option('--use-generator/--no-use-generator', default=True,
+@click.option('--use-generator/--no-use-generator', default=False,
               help='Indicates whether the dataset should be loaded in chunks during processing ' +
               '(rather than into memory all at once). Defaults to False.')
 @click.option('--max-files', default=None, help='The maximum number of files to load. Defaults to None, which means ' + 
@@ -470,7 +510,7 @@ def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs,
         _CONFIG_COPY_FORMAT = '\n'.join(line.strip() for line in _CONFIG_COPY_FORMAT.strip().split('\n'))
 
         model_logdir.mkdir(parents=True, exist_ok=True)
-        config = composer.config.get(config_filepath or get_default_config(model_type))
+        config = composer.config.get(config_filepath or get_default_config())
         with open(config.filepath) as original_config_file, \
              open(model_logdir / 'config.yml', 'w+') as copy_config_file:
             

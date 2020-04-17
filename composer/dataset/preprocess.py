@@ -10,9 +10,27 @@ from tqdm import tqdm
 from pathlib import Path
 from composer.utils import parallel_process
 from composer.dataset.sequence import NoteSequence
+from composer.exceptions import InvalidParameterError
 
 # The extension of preprocessed files.
 _OUTPUT_EXTENSION = 'data'
+
+def get_processed_files(dataset_path):
+    '''
+    Gets all the preprocessed in the specified dataset directory.
+
+    :param dataset_path:
+        The path to the directory containing the preprocessed files.
+    :returns:
+        A list of Path-like objects representing the paths to the preprocessed files.
+
+    '''
+
+    dataset_path = Path(dataset_path)
+    if not dataset_path.is_dir():
+        raise InvalidParameterError('\'{}\' is an invalid dataset path!'.format(dataset_path))
+    
+    return list(dataset_path.glob('**/*.{}'.format(_OUTPUT_EXTENSION)))
 
 def convert_file(filepath, output_path, transform=False, time_stretch_range=(0.90, 1.10), pitch_shift_range=(-4, 4),
                  time_step_increment=10, max_time_steps=100, velocity_bins=32,

@@ -345,7 +345,6 @@ def decode_to_event(config, event_id):
     '''
 
     event_value_ranges, event_dimensions, event_ranges = get_event_sequence_ranges(config)
-    IntegerEncodedEventSequence.event_to_id()
     return IntegerEncodedEventSequence.id_to_event(event_id, event_ranges, event_value_ranges)
 
 def get_default_config():

@@ -35,7 +35,6 @@ transformer:
         embedding_size: 512
         decoder_layers_count: 8
         attention_head_count: 16
-        attention_head_size: 32
     train:
         batch_size: 1
         learning_rate: 0.001

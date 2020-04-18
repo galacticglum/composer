@@ -49,7 +49,7 @@ class MusicRNN(Model):
         '''
         Initialize an instance of :class:`MusicRNN`.
 
-        :param input_event_dimensions:
+        :param event_dimensions:
             An integer denoting the dimensions of a single feature (i.e. the size of an event sequence).
             The network takes in a sequence of these events and outputs an event in the form of a sequence
             of the same size denoting the next event in the sequence.
@@ -72,8 +72,6 @@ class MusicRNN(Model):
         :param use_batch_normalization:
             Indicates whether each LSTM layer should be followed by a :class:`tensorflow.keras.layers.BatchNormalization`
             layer. Defaults to ``True``. 
-        :note:
-            This sets up the model architecture and layers.
 
         '''
 
@@ -119,7 +117,7 @@ class MusicRNN(Model):
         :param inputs:
             The inputs to the network. This should be an array-like object containing
             sequences (of size :attr:`MusicRNN.window_size`) of :attr:`MusicRNN.event_dimensions`
-            -dimensional one-hot vectors representing the events.
+            -dimensional sequences representing the events (either integer ids or one-hot vectors).
 
         '''
 

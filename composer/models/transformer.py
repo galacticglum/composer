@@ -292,7 +292,7 @@ class Transformer(tf.keras.Model):
             outputs['present'] = tf.stack(presents, axis=1)
             h = norm(h, 'ln_f')
 
-            # Language model loss.  Do tokens <n predict token n?
+            # Language model loss. Do tokens <n predict token n?
             h_flat = tf.reshape(h, [batch_size * window_size, self.embedding_size])
             logits = tf.matmul(h_flat, wte, transpose_b=True)
             logits = tf.reshape(logits, [batch_size, window_size, self.event_vocab_size])

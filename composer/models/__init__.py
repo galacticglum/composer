@@ -7,6 +7,7 @@ import composer.dataset.sequence as sequence
 from enum import IntEnum
 from composer.utils import parallel_process
 from composer.models.music_rnn import MusicRNN
+from composer.models.transformer import Transformer
 
 class EventEncodingType(IntEnum):
     '''

@@ -61,145 +61,192 @@ class ModelType(Enum):
 
     :cvar MUSIC_RNN:
         The type corresponding to the :class:`composer.models.MusicRNN` model.
+    :cvar TRANSFORMER:
+        The type corresponding to the :class:`composer.models.Transformer` model.
 
     '''
 
     MUSIC_RNN = 'music_rnn'
+    TRANSFORMER = 'transformer'
 
-    def create_model(self, config, **kwargs):
-        '''
-        Creates the model class associated with this :class:`ModelType` using the 
-        values in the specified :class:`composer.config.ConfigInstance` object.
+def create_model(model_type, config, **kwargs):
+    '''
+    Creates the model class associated with this :class:`ModelType` using the 
+    values in the specified :class:`composer.config.ConfigInstance` object.
 
-        :param config:
-            A :class:`composer.config.ConfigInstance` containing the configuration values.
-        :param \**kwargs:
-            External data passed to the creation method (i.e. data not in the configuration file)
-        :returns:
-            A :class:`tensorflow.keras.Model` object representing an instance of the specified model
-            and the vocabulary size of an event in the dataset.
-        '''
+    :param model_type:
+        A :class:`ModelType` value representing the type of the model to create.
+    :param config:
+        A :class:`composer.config.ConfigInsance` containing the configuration values.
+    :param \**kwargs:
+        External data passed to the creation method (i.e. data not in the configuration file)
+    :returns:
+        A :class:`tensorflow.keras.Model` object representing an instance of the specified model
+        and the vocabulary size of an event in the dataset.
 
-        event_vocab_size = _get_event_vocab_size(config)
+    '''
 
-        # Creates the MusicRNN model.
-        def _create_music_rnn():
-            from composer import models
+    from composer import models
+    event_vocab_size = _get_event_vocab_size(config)
 
-            return models.MusicRNN(
-                event_vocab_size, config.music_rnn.train.batch_size, config.music_rnn.model.embedding_size, 
-                config.music_rnn.model.lstm_layers_count, config.music_rnn.model.lstm_layer_sizes, 
-                config.music_rnn.model.lstm_dropout_probability, config.music_rnn.model.use_batch_normalization
-            )
+    # Creates the MusicRNN model.
+    def _create_music_rnn():
+        return models.MusicRNN(
+            event_vocab_size, config.music_rnn.train.batch_size, config.music_rnn.model.embedding_size, 
+            config.music_rnn.model.lstm_layers_count, config.music_rnn.model.lstm_layer_sizes, 
+            config.music_rnn.model.lstm_dropout_probability, config.music_rnn.model.use_batch_normalization
+        )
 
-        # An easy way to map the creation functions to their respective types.
-        # This is a lot better than doing something like an if/elif statement.
-        function_map = {
-            ModelType.MUSIC_RNN: _create_music_rnn
-        }
+    def _create_transformer():
+        return models.Transformer(
+            event_vocab_size, config.transformer.model.embedding_size,
+            config.transformer.model.decoder_layers_count,
+            config.transformer.model.attention_head_count
+        )
 
-        return function_map[self](), event_vocab_size
+    # An easy way to map the creation functions to their respective types.
+    # This is a lot better than doing something like an if/elif statement.
+    function_map = {
+        ModelType.MUSIC_RNN: _create_music_rnn,
+        ModelType.TRANSFORMER: _create_transformer
+    }
 
-    def get_dataset(self, dataset_path, config, mode='', use_generator=True, max_files=None,
-                    show_progress_bar=True, shuffle_files=True, shuffle_dataset=True):
-        '''
-        Loads a dataset for this :class:`ModelType` using the values 
-        in the specified :class:`composer.config.ConfigInstance` object.
+    return function_map[model_type](), event_vocab_size
 
-        :param dataset_path:
-            The path to the preprocessed dataset organized into two subdirectories: train and test.
-        :param config:
-            A :class:`composer.config.ConfigInstance` containing the configuration values.
-        :param mode:
-            A string indicating the dataset mode: ``train`` or ``test``.
-        :param use_generator:
-            Indicates whether the Dataset should be given as a generator object. Defaults to ``True``.
-        :param max_files:
-            The maximum number of files to load. Defaults to ``None`` which means that ALL
-            files will be loaded.
-        :param show_progress_bar:
-            Indicates whether a loading progress bar should be displayed while the dataset is loaded
-            into memory. Defaults to ``True``.
-        :param shuffle_files:
-            Indicates whether the files should be shuffled before beginning the loading process. Defaults to ``True``.
-        :param shuffle_dataset:
-            Indicates whether the dataset should be shuffled. Defaults to ``True``.
-        :returns:
-            A :class:`tensorflow.data.Dataset` object representing the dataset.
+def get_batch_size(model_type, config):
+    '''
+    Gets the batch size from the specified :class:`composer.config.ConfigInstance`
+    for the given :class:`ModelType.
+
+    '''
+
+    if model_type == ModelType.MUSIC_RNN:
+        return config.music_rnn.train.batch_size
+    elif model_type == ModelType.TRANSFORMER:
+        return config.transformer.train.batch_size
+    else:
+        raise NotImplementedError('Unrecognized model type: \'{}\'.'.format(model_type))
+
+def get_learning_rate(model_type, config):
+    '''
+    Gets the learning rate from the specified :class:`composer.config.ConfigInstance`
+    for the given :class:`ModelType.
+
+    '''
+
+    if model_type == ModelType.MUSIC_RNN:
+        return config.music_rnn.train.learning_rate
+    elif model_type == ModelType.TRANSFORMER:
+        return config.transformer.train.learning_rate
+    else:
+        raise NotImplementedError('Unrecognized model type: \'{}\'.'.format(model_type))
+
+def get_window_size(model_type, config):
+    '''
+    Gets the window size from the specified :class:`composer.config.ConfigInstance`
+    for the given :class:`ModelType.
+
+    '''
+
+    if model_type == ModelType.MUSIC_RNN:
+        return config.music_rnn.model.window_size
+    elif model_type == ModelType.TRANSFORMER:
+        return config.transformer.model.window_size
+    else:
+        raise NotImplementedError('Unrecognized model type: \'{}\'.'.format(model_type))
+
+def get_dataset(model_type, dataset_path, config, mode='', use_generator=True, max_files=None,
+                show_progress_bar=True, shuffle_files=True, shuffle_dataset=True):
+    '''
+    Loads a dataset for this :class:`ModelType` using the values 
+    in the specified :class:`composer.config.ConfigInstance` object.
+
+    :param model_type:
+        A :class:`ModelType` value indicating for which model the dataset should be loaded for.
+    :param dataset_path:
+        The path to the preprocessed dataset organized into two subdirectories: train and test.
+    :param config:
+        A :class:`composer.config.ConfigInstance` containing the configuration values.
+    :param mode:
+        A string indicating the dataset mode: ``train`` or ``test``.
+    :param use_generator:
+        Indicates whether the Dataset should be given as a generator object. Defaults to ``True``.
+    :param max_files:
+        The maximum number of files to load. Defaults to ``None`` which means that ALL
+        files will be loaded.
+    :param show_progress_bar:
+        Indicates whether a loading progress bar should be displayed while the dataset is loaded
+        into memory. Defaults to ``True``.
+    :param shuffle_files:
+        Indicates whether the files should be shuffled before beginning the loading process. Defaults to ``True``.
+    :param shuffle_dataset:
+        Indicates whether the dataset should be shuffled. Defaults to ``True``.
+    :returns:
+        A :class:`tensorflow.data.Dataset` object representing the dataset.
+    
+    '''
+
+    from composer.models import load_dataset, load_tfrecord_dataset, EventEncodingType
+
+    if mode not in ['train', 'test', '']:
+        raise InvalidParameterError('\'{}\' is an invalid dataset mode! Must be one of: \'train\', \'test\', or none.'.format(mode))
+
+    dataset_path = Path(dataset_path)
+    if dataset_path.is_dir():
+        dataset_path = dataset_path / mode
+        if not dataset_path.exists():
+            raise DatasetError('Could not get {mode} dataset since the specified dataset directory, ' +
+                            '\'{}\', has no {mode} folder.'.format(dataset_path, mode=mode))
+
+        files = composer.dataset.preprocess.get_processed_files(dataset_path)
+        if shuffle_files:
+            np.random.shuffle(files)
         
-        '''
+        is_dataset_tfrecord = False
+    else:
+        if not dataset_path.is_file() or dataset_path.suffix != '.tfrecord':
+            raise InvalidParameterError(
+                '\'{}\' is an invalid dataset path! The dataset can either be a '
+                .format(dataset_path) + 'directory of processed MIDI files or a TFRecord file.'
+            )
+        
+        files = [dataset_path]
+        is_dataset_tfrecord = True
 
-        from composer.models import load_dataset, load_tfrecord_dataset, EventEncodingType
+    if max_files is not None:
+        files = files[:max_files]
 
-        if mode not in ['train', 'test', '']:
-            raise InvalidParameterError('\'{}\' is an invalid dataset mode! Must be one of: \'train\', \'test\', or none.'.format(mode))
+    if is_dataset_tfrecord:
+        dataset, header = load_tfrecord_dataset(files[0], shuffle=shuffle_dataset)
+        
+        # Make sure that the header metadata matches the config file
+        TFRECORD_EXPORT_WARNING = 'The TFRecord file was probably exported using a different config.'
+        
+        dataset_model_type = ModelType(header['model_type'])
+        if model_type != dataset_model_type:
+            logging.warn('Model type mismatch when loading \'{}\'. Expected {} but found {}. {}'
+                .format(files[0], model_type, dataset_model_type, TFRECORD_EXPORT_WARNING))
 
-        dataset_path = Path(dataset_path)
-        if dataset_path.is_dir():
-            dataset_path = dataset_path / mode
-            if not dataset_path.exists():
-                raise DatasetError('Could not get {mode} dataset since the specified dataset directory, ' +
-                                '\'{}\', has no {mode} folder.'.format(dataset_path, mode=mode))
+            click.confirm('Do you want to continue? This may cause errors or corrupt the training session.', abort=True)
+        
+        batch_size = header['batch_size']
+        if get_batch_size(model_type, config) != batch_size:
+            logging.error('Expected a batch size of {} but found {}. {}'.format(
+                get_batch_size(model_type, config), batch_size, TFRECORD_EXPORT_WARNING))
+            exit(1)
+        
+        window_size = header['window_size']
+        if get_window_size(model_type, config) != window_size:
+            logging.error('Expected a window size of {} but found {}. {}'.format(
+                get_window_size(model_type, config), window_size, TFRECORD_EXPORT_WARNING))
+            exit(1)
+    else: 
+        dataset = load_dataset(files, get_batch_size(model_type, config), 
+            get_window_size(model_type, config),
+            show_loading_progress_bar=show_progress_bar,
+            use_generator=use_generator, shuffle=shuffle_dataset)
 
-            files = composer.dataset.preprocess.get_processed_files(dataset_path)
-            if shuffle_files:
-                np.random.shuffle(files)
-            
-            is_dataset_tfrecord = False
-        else:
-            if not dataset_path.is_file() or dataset_path.suffix != '.tfrecord':
-                raise InvalidParameterError(
-                    '\'{}\' is an invalid dataset path! The dataset can either be a ' +
-                    'directory of processed MIDI files or a TFRecord file.'.format(dataset_path)
-                )
-            
-            files = [dataset_path]
-            is_dataset_tfrecord = True
-
-        # Creates the MusicRNNDataset.
-        def _load_music_rnn_dataset(files):
-            if max_files is not None:
-                files = files[:max_files]
-
-            if is_dataset_tfrecord:
-                dataset, header = load_tfrecord_dataset(files[0], shuffle=shuffle_dataset)
-                
-                # Make sure that the header metadata matches the config file
-                TFRECORD_EXPORT_WARNING = 'The TFRecord file was probably exported using a different config.'
-                
-                model_type = ModelType(header['model_type'])
-                if self != model_type:
-                    logging.warn('Model type mismatch when loading \'{}\'. Expected {} but found {}. {}'
-                        .format(files[0], self, model_type, TFRECORD_EXPORT_WARNING))
-
-                    click.confirm('Do you want to continue? This may cause errors or corrupt the training session.', abort=True)
-                
-                batch_size = header['batch_size']
-                if config.music_rnn.train.batch_size != batch_size:
-                    logging.error('Expected a batch size of {} but found {}. {}'.format(
-                        config.music_rnn.train.batch_size, batch_size, TFRECORD_EXPORT_WARNING))
-                    exit(1)
-                
-                window_size = header['window_size']
-                if config.music_rnn.model.window_size != window_size:
-                    logging.error('Expected a window size of {} but found {}. {}'.format(
-                        config.music_rnn.model.window_size, window_size, TFRECORD_EXPORT_WARNING))
-                    exit(1)
-            else: 
-                dataset = load_dataset(files, config.music_rnn.train.batch_size, 
-                    config.music_rnn.model.window_size,
-                    show_loading_progress_bar=show_progress_bar,
-                    use_generator=use_generator, shuffle=shuffle_dataset)
-
-            return dataset
-
-        # An easy way to map the creation functions to their respective types.
-        # This is a lot better than doing something like an if/elif statement.
-        function_map = {
-            ModelType.MUSIC_RNN: _load_music_rnn_dataset
-        }
-
-        return function_map[self](files)
+    return dataset
 
 @cli.command()
 @click.argument('model-type', type=EnumType(ModelType, False))
@@ -282,7 +329,7 @@ def export_dataset(model_type, preprocessed_path, output_path, config_filepath, 
     from composer.io_utils import bytes_feature, int64_feature
 
     config = composer.config.get(config_filepath or get_default_config())
-    dataset = model_type.get_dataset(preprocessed_path, config, shuffle_dataset=False,
+    dataset = get_dataset(model_type, preprocessed_path, config, shuffle_dataset=False,
                 use_generator=use_generator, max_files=max_files)
  
     logging.info('Loading dataset and writing to TFRecord. This make take a while...')
@@ -355,7 +402,7 @@ def get_default_config():
 
     return Path(__file__).parent / 'default_config.yml' 
 
-def compile_model(model, config):
+def compile_model(model, learning_rate):
     '''
     Compiles the specified ``model``.
 
@@ -364,7 +411,7 @@ def compile_model(model, config):
     from tensorflow.keras import optimizers, losses
 
     loss = losses.SparseCategoricalCrossentropy(from_logits=True)
-    optimizer = optimizers.Adam(learning_rate=config.music_rnn.train.learning_rate)
+    optimizer = optimizers.Adam(learning_rate=learning_rate)
     model.compile(loss=loss, optimizer=optimizer, metrics=['accuracy'])
 
 @cli.command()
@@ -379,8 +426,8 @@ def summary(model_type, config_filepath):
 
     config = composer.config.get(config_filepath or get_default_config())
 
-    model, dimensions = model_type.create_model(config)
-    model.build(input_shape=(config.music_rnn.train.batch_size, None))
+    model, _ = create_model(model_type, config)
+    model.build(input_shape=(get_batch_size(model_type, config), None))
     model.summary()
 
 @cli.command()
@@ -399,7 +446,7 @@ def visualize_training(model_type, dataset_path, config_filepath, steps, decode_
     '''
 
     config = composer.config.get(config_filepath or get_default_config())
-    dataset = model_type.get_dataset(dataset_path, config, mode='train', max_files=1, show_progress_bar=False)
+    dataset = get_dataset(model_type, dataset_path, config, mode='train', max_files=1, show_progress_bar=False)
 
     count = 0
     events = []
@@ -518,11 +565,11 @@ def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs,
 
             copy_config_file.write(out_config)
 
-    model, _ = model_type.create_model(config)
-    compile_model(model, config)
+    model, _ = create_model(model_type, config)
+    compile_model(model, get_learning_rate(model_type, config))
 
     # We need to build the model so that it knows about the batch size.
-    model.build(input_shape=(config.music_rnn.train.batch_size, None))
+    model.build(input_shape=(get_batch_size(model_type, config), None))
 
     if restoredir is not None:
         checkpoint = tf.train.latest_checkpoint(restoredir)
@@ -544,7 +591,7 @@ def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs,
                                                 period=epoch_save_period if is_epoch_save_freq else None, 
                                                 save_best_only=False, mode='auto', save_weights_only=True)
 
-    train_dataset = model_type.get_dataset(dataset_path, config, 'train', use_generator, max_files=max_files)
+    train_dataset = get_dataset(model_type, dataset_path, config, 'train', use_generator, max_files=max_files)
     training_history = model.fit(train_dataset, epochs=epochs + initial_epoch, initial_epoch=initial_epoch,
                                  callbacks=[tensorboard_callback, model_checkpoint_callback])
 
@@ -566,13 +613,13 @@ def evaluate(model_type, dataset_path, restoredir, use_generator, max_files):
     import tensorflow as tf
 
     config = get_config_from_restoredir(restoredir)  
-    model, dimensions = model_type.create_model(config)
+    model, _ = create_model(model_type, config)
 
-    compile_model(model, config)
+    compile_model(model, get_learning_rate(model_type, config))
     model.load_weights(tf.train.latest_checkpoint(restoredir))
-    model.build(input_shape=(config.music_rnn.train.batch_size, None))
+    model.build(input_shape=(get_batch_size(model_type, config), None))
 
-    test_dataset = model_type.get_dataset(dataset_path, config, 'test', use_generator, max_files=max_files, shuffle_dataset=False)
+    test_dataset = get_dataset(model_type, dataset_path, config, 'test', use_generator, max_files=max_files, shuffle_dataset=False)
     loss, accuracy = model.evaluate(test_dataset, verbose=0)
     logging.info('- Finished evaluating model. Loss: {:.4f}, Accuracy: {:.4f}'.format(loss, accuracy))
 
@@ -595,9 +642,9 @@ def generate(model_type, restoredir, output_filepath, prompt, prompt_length, gen
     import tensorflow as tf
 
     config = get_config_from_restoredir(restoredir)
-    model, dimensions = model_type.create_model(config)
+    model, _ = create_model(model_type, config)
 
-    compile_model(model, config)
+    compile_model(model, get_learning_rate(model_type, config))
     model.load_weights(tf.train.latest_checkpoint(restoredir))
     model.build(input_shape=(1, None))
 

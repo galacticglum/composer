@@ -34,3 +34,7 @@ pip install -e .
 ``` 
 
 You can now run the Composer CLI in the conda environment as you would any other command. Also, any changes made to the CLI will be automatically reflected (due to the ``-e`` argument when running the setup command).
+
+
+### References
+Transformer-decoder block implementation based on the open-source [OpenAI GPT-2 code](https://github.com/openai/gpt-2/blob/master/src/model.py).

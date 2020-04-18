@@ -37,4 +37,4 @@ You can now run the Composer CLI in the conda environment as you would any other
 
 
 ### References
-Transformer-decoder block implementation based on the open-source [OpenAI GPT-2 code](https://github.com/openai/gpt-2/blob/master/src/model.py).
+1. Transformer-decoder block implementation based on the open-source [OpenAI GPT-2 code](https://github.com/openai/gpt-2/blob/master/src/model.py).

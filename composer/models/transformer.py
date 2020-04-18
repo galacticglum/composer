@@ -219,10 +219,9 @@ class Transformer(tf.keras.Model):
         See :mod:`composer.dataset.sequence` for more information about the 
         event-based sequence description.
 
-    :ivar event_dimensions:
-        An integer denoting the dimensions of a single feature (i.e. the size of an event sequence).
-        The network takes in a sequence of these events and outputs an event in the form of a sequence
-        of the same size denoting the next event in the sequence.
+    :ivar event_vocab_size:
+        The size of the MIDI-like event-based description vocabulary.
+        This is the dimensionality of a one-hot vector encoded representation of an event.
     :ivar embedding_size:
         The number of units in the embedding layer.
     :ivar decoder_layers_count:
@@ -237,15 +236,14 @@ class Transformer(tf.keras.Model):
 
     '''
 
-    def __init__(self, event_dimensions, embedding_size, decoder_layers_count, 
+    def __init__(self, event_vocab_size, embedding_size, decoder_layers_count, 
                  attention_head_count, scope='model', reuse_scope=False):
         '''
         Initialize an instance of :class:`Transformer`.
 
-        :param event_dimensions:
-            An integer denoting the dimensions of a single feature (i.e. the size of an event sequence).
-            The network takes in a sequence of these events and outputs an event in the form of a sequence
-            of the same size denoting the next event in the sequence.
+        :param event_vocab_size:
+            The size of the MIDI-like event-based description vocabulary.
+            This is the dimensionality of a one-hot vector encoded representation of an event.
         :param embedding_size:
             The number of units in the embedding layer.
         :param decoder_layers_count:
@@ -260,7 +258,7 @@ class Transformer(tf.keras.Model):
 
         '''
         
-        self.event_dimensions = event_dimensions
+        self.event_vocab_size = event_vocab_size
         self.embedding_size = embedding_size
         self.decoder_layers_count = decoder_layers_count
         self.attention_head_count = attention_head_count
@@ -274,16 +272,13 @@ class Transformer(tf.keras.Model):
 
         :param inputs:
             The inputs to the network.
-            
-            This should be an array-like object containing sequences of :attr:`Transformer.event_dimensions`
-            -dimensional sequences representing the events (either integer ids or one-hot vectors).
-
+        
         '''
 
         with tf.name_scope(self.scope, reuse=self.reuse_scope):
             batch_size, window_size = shape_list(inputs)
 
-            wte_shape = [self.event_dimensions, self.embedding_size]
+            wte_shape = [self.event_vocab_size, self.embedding_size]
             wte = tf.Variable(tf.random_normal_initializer(stddev=0.02)(wte_shape), name='wte')
             h = tf.gather(wte, inputs)
 
@@ -300,7 +295,7 @@ class Transformer(tf.keras.Model):
             # Language model loss.  Do tokens <n predict token n?
             h_flat = tf.reshape(h, [batch_size * window_size, self.embedding_size])
             logits = tf.matmul(h_flat, wte, transpose_b=True)
-            logits = tf.reshape(logits, [batch_size, window_size, self.event_dimensions])
+            logits = tf.reshape(logits, [batch_size, window_size, self.event_vocab_size])
 
             outputs['logits'] = logits
             return outputs

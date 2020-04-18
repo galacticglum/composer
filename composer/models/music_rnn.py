@@ -43,16 +43,15 @@ class MusicRNN(Model):
 
     '''
 
-    def __init__(self, event_dimensions, batch_size, embedding_size, lstm_layers_count,
+    def __init__(self, event_vocab_size, batch_size, embedding_size, lstm_layers_count,
                  lstm_layer_sizes, lstm_dropout_probability, use_batch_normalization=True):
 
         '''
         Initialize an instance of :class:`MusicRNN`.
 
-        :param event_dimensions:
-            An integer denoting the dimensions of a single feature (i.e. the size of an event sequence).
-            The network takes in a sequence of these events and outputs an event in the form of a sequence
-            of the same size denoting the next event in the sequence.
+        :param event_vocab_size:
+            The size of the MIDI-like event-based description vocabulary.
+            This is the dimensionality of a one-hot vector encoded representation of an event.
         :param batch_size:
             The number of events in a single batch.
         :param embedding_size:
@@ -92,7 +91,7 @@ class MusicRNN(Model):
             # Convert lstm_dropout_probability to a numpy array of uniform elements.
             lstm_dropout_probability = np.full(lstm_layers_count, lstm_dropout_probability)
 
-        self.embedding_layer = layers.Embedding(event_dimensions, embedding_size, batch_input_shape=(batch_size, None))
+        self.embedding_layer = layers.Embedding(event_vocab_size, embedding_size, batch_input_shape=(batch_size, None))
         self.lstm_layers = []
         self.dropout_layers = []
         self.normalization_layers = []
@@ -108,17 +107,15 @@ class MusicRNN(Model):
 
         self.use_normalization_layers = len(self.normalization_layers) == lstm_layers_count
         self.use_dropout_layers = len(self.dropout_layers) == lstm_layers_count
-        self.output_layer = layers.Dense(event_dimensions)
+        self.output_layer = layers.Dense(event_vocab_size)
 
     def call(self, inputs):
         '''
         Feed forward call on this network.
 
         :param inputs:
-            The inputs to the network. This should be an array-like object containing
-            sequences (of size :attr:`MusicRNN.window_size`) of :attr:`MusicRNN.event_dimensions`
-            -dimensional sequences representing the events (either integer ids or one-hot vectors).
-
+            The inputs to the network.
+            
         '''
 
         inputs = self.embedding_layer(inputs)

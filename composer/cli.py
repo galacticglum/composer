@@ -77,17 +77,17 @@ class ModelType(Enum):
             External data passed to the creation method (i.e. data not in the configuration file)
         :returns:
             A :class:`tensorflow.keras.Model` object representing an instance of the specified model
-            and the dimensions of an event (single feature and label) in the dataset.
+            and the vocabulary size of an event in the dataset.
         '''
 
-        dimensions = _get_event_vocab_size(config)
+        event_vocab_size = _get_event_vocab_size(config)
 
         # Creates the MusicRNN model.
         def _create_music_rnn():
             from composer import models
 
             return models.MusicRNN(
-                dimensions, config.music_rnn.train.batch_size, config.music_rnn.model.embedding_size, 
+                event_vocab_size, config.music_rnn.train.batch_size, config.music_rnn.model.embedding_size, 
                 config.music_rnn.model.lstm_layers_count, config.music_rnn.model.lstm_layer_sizes, 
                 config.music_rnn.model.lstm_dropout_probability, config.music_rnn.model.use_batch_normalization
             )
@@ -98,7 +98,7 @@ class ModelType(Enum):
             ModelType.MUSIC_RNN: _create_music_rnn
         }
 
-        return function_map[self](), dimensions
+        return function_map[self](), event_vocab_size
 
     def get_dataset(self, dataset_path, config, mode='', use_generator=True, max_files=None,
                     show_progress_bar=True, shuffle_files=True, shuffle_dataset=True):

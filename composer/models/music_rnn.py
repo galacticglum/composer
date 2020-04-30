@@ -7,7 +7,7 @@ more information about the event-based sequence description.)
 
 import numpy as np
 import tensorflow as tf
-from composer.models import BaseModel
+from composer.models import BaseModel, ModelSaveFrequencyMode
 from tensorflow.keras import Model, Input, layers
 
 def _get_rnn_model(event_vocab_size, batch_size, embedding_size, lstm_layers_count,
@@ -155,5 +155,17 @@ class MusicRNN(BaseModel):
 
         self.model.summary()
 
-    def train(dataset, epochs=10):
+    def train(self, dataset, logdir, restoredir=None, epochs=None,
+              save_frequency_mode=ModelSaveFrequencyMode.EPOCH, save_frequency=1):
+        '''
+        Fit the model to the specified ``dataset``.
+
+        :param dataset:
+            An iterable object containing feature, label pairs (as tuples).
+        :param epochs:
+            The number of epochs to train for. Defaults to ``None``, meaning
+            that the model will train indefinitely.
+
+        '''
+
         pass

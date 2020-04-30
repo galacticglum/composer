@@ -4,9 +4,23 @@ import numpy as np
 import tensorflow as tf
 import composer.dataset.sequence as sequence
 
-from enum import IntEnum
+from enum import Enum, IntEnum
 from abc import ABC, abstractmethod
 from composer.utils import parallel_process
+
+class ModelSaveFrequencyMode(Enum):
+    '''
+    Indicates the units of the model save frequency.
+
+    :ivar EPOCH:
+        The model save frequency is in epochs.
+    :ivar GLOBAL_STEP:
+        The model save frequency is in global steps.
+
+    '''
+
+    EPOCH = 'epoch'
+    GLOBAL_STEP = 'step'
 
 class BaseModel(ABC):
     '''
@@ -15,14 +29,32 @@ class BaseModel(ABC):
     '''
 
     @abstractmethod
-    def train(dataset, epochs=10):
+    def train(self, dataset, logdir, restoredir=None, epochs=10, save_frequency_mode=ModelSaveFrequencyMode.EPOCH,
+              save_frequency=1, max_checkpoints=1):
         '''
         Fit the model to the specified ``dataset``.
 
         :param dataset:
-            An iterable object containing feature, label pairs.
+            An iterable object containing feature, label pairs (as tuples).
+        :param logdir:
+            The root log directory.
+        :param restoredir:
+            The log directory of the model to continue training. If both ``logdir``
+            and ``restoredir`` are specified, the ``restoredir`` will be used.
+
+            Defaults to ``None``.
         :param epochs:
-            The number of epochs to train for. Defaults to 10.
+            The number of epochs to train for. Defaults to ``None``, meaning
+            that the model will train indefinitely.
+        :param save_frquency_mode:
+            A :class:`ModelSaveFrequency` indicating the units of the model save 
+            frequency. This can also be a string value corresponding to the enum
+            value. Defaults to :class:`ModelSaveFrequencyMode.EPOCH`.
+        :param save_frequency:
+            How often the model should be saved in units specified by the 
+            `save_frequency_mode` parameter. Defaults to 1.
+        :param max_checkpoints:
+            The maximum number of checkpoints to keep. Defaults to 1.
 
         '''
 

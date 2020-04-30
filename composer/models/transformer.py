@@ -193,7 +193,7 @@ def expand_tile(value, size):
     ndims = value.shape.ndims
     return tf.tile(tf.expand_dims(value, axis=0), [size] + [1]*ndims)
 
-def transformer_model(inputs, vocab_size, context_size, embedding_size, attention_head_count,
+def transformer_model(inputs, vocab_size, embedding_size, attention_head_count,
                       decoder_layers_count, scope='model', reuse_scope=False):
     '''
     Run a single step of the Transformer-decoder model.
@@ -201,12 +201,6 @@ def transformer_model(inputs, vocab_size, context_size, embedding_size, attentio
     :param vocab_size:
             The size of the MIDI-like event-based description vocabulary.
             This is the dimensionality of a one-hot vector encoded representation of an event.
-    :param context_size:
-        The size of the casual mask.
-        
-        Usually, this is the same as the maximum sequence length, which indicates the 
-        maximum sequence length that the model can ever be used with. This is typically 
-        set to something large (i.e. 1024 or 2048).
     :param embedding_size:
         The number of units in the embedding layer.
     :param attention_head_count:
@@ -256,7 +250,7 @@ class Transformer(BaseModel):
 
     '''
 
-    def __init__(self, event_vocab_size, context_size, embedding_size, attention_head_count,
+    def __init__(self, event_vocab_size, embedding_size, attention_head_count,
                  decoder_layers_count, scope='model', reuse_scope=False):
         '''
         Initialize an instance of :class:`Transformer`.
@@ -264,12 +258,6 @@ class Transformer(BaseModel):
         :param event_vocab_size:
             The size of the MIDI-like event-based description vocabulary.
             This is the dimensionality of a one-hot vector encoded representation of an event.
-        :param context_size:
-            The size of the casual mask.
-            
-            Usually, this is the same as the maximum sequence length, which indicates the 
-            maximum sequence length that the model can ever be used with. This is typically 
-            set to something large (i.e. 1024 or 2048).
         :param embedding_size:
             The number of units in the embedding layer.
         :param attention_head_count:
@@ -285,7 +273,6 @@ class Transformer(BaseModel):
         '''
 
         self.event_vocab_size = event_vocab_size
-        self.context_size = context_size
         self.embedding_size = embedding_size
         self.attention_head_count = attention_head_count
         self.decoder_layers_count = decoder_layers_count

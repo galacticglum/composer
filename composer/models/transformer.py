@@ -193,7 +193,7 @@ def expand_tile(value, size):
     return tf.tile(tf.expand_dims(value, axis=0), [size] + [1]*ndims)
 
 def transformer_model(inputs, vocab_size, context_size, embedding_size, attention_head_count,
-                      decoder_layers_count, past=None, scope='model', reuse_scope=False):
+                      decoder_layers_count, scope='model', reuse_scope=False):
     '''
     Run a single step of the Transformer-decoder model.
 
@@ -212,8 +212,6 @@ def transformer_model(inputs, vocab_size, context_size, embedding_size, attentio
         The number of attention heads.
     :param decoder_layers_count:
         The number of decoder blocks.
-    :param past:
-        The previous states of the model.
     :param scope:
         The name of the variable scope.
     :param reuse_scope:
@@ -225,19 +223,14 @@ def transformer_model(inputs, vocab_size, context_size, embedding_size, attentio
     with tf.compat.v1.variable_scope(scope, reuse=reuse_scope):
         batch, sequence = shape_list(inputs)
         
-        wpe = tf.compat.v1.get_variable('wpe', [context_size, embedding_size],
-                                        initializer=tf.compat.v1.random_normal_initializer(stddev=0.01))
         wte = tf.compat.v1.get_variable('wte', [vocab_size, embedding_size],
                                         initializer=tf.compat.v1.random_normal_initializer(stddev=0.02))        
-        past_length = 0 if past is None else tf.shape(past)[-2]
-        h = tf.gather(wte, inputs) + tf.gather(wpe, positions_for(inputs, past_length))
+        h = tf.gather(wte, inputs)
 
         # Transformer
         presents = []
-        pasts = tf.unstack(past, axis=1) if past is not None else [None] * decoder_layers_count
-        assert len(pasts) == decoder_layers_count
-        for layer, past in enumerate(pasts):
-            h, present = block(h, 'h%d' % layer, past=past, attention_head_count)
+        for layer in range(decoder_layers_count):
+            h, present = block(h, 'h%d' % layer, attention_head_count)
             presents.append(present)
         
         outputs = {}

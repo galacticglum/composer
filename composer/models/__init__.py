@@ -5,7 +5,37 @@ import tensorflow as tf
 import composer.dataset.sequence as sequence
 
 from enum import IntEnum
+from abc import ABC, abstractmethod
 from composer.utils import parallel_process
+
+class BaseModel(ABC):
+    '''
+    A generic model interface class that is independent of TensorFlow/Keras. 
+
+    '''
+
+    @abstractmethod
+    def train(dataset, epochs=10):
+        '''
+        Fit the model to the specified ``dataset``.
+
+        :param dataset:
+            An iterable object containing feature, label pairs.
+        :param epochs:
+            The number of epochs to train for. Defaults to 10.
+
+        '''
+
+        pass
+
+    def summary(self):
+        '''
+        Outputs a summary of the model.
+
+        '''
+
+        raise NotImplementedError()
+
 from composer.models.music_rnn import MusicRNN
 from composer.models.transformer import Transformer
 

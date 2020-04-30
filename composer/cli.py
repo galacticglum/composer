@@ -427,7 +427,6 @@ def summary(model_type, config_filepath):
     config = composer.config.get(config_filepath or get_default_config())
 
     model, _ = create_model(model_type, config)
-    model.build(input_shape=(get_batch_size(model_type, config), None))
     model.summary()
 
 @cli.command()

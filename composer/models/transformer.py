@@ -10,6 +10,7 @@ a memory-efficient relative attention implementation.
 '''
 
 import tensorflow as tf
+from composer.models import BaseModel
 
 def shape_list(x):
     '''
@@ -244,7 +245,7 @@ def transformer_model(inputs, vocab_size, context_size, embedding_size, attentio
         outputs['logits'] = logits
         return outputs
 
-class Transformer:
+class Transformer(BaseModel):
     '''
     A Transformer-decoder model designed to generate music based on an
     MIDI-like event-based description language.
@@ -290,3 +291,14 @@ class Transformer:
         self.decoder_layers_count = decoder_layers_count
         self.scope = scope
         self.reuse_scope = reuse_scope
+
+    def summary(self):
+        '''
+        Outputs a summary of the MusicRNN model.
+
+        '''
+
+        self.model.summary()
+
+    def train(dataset, epochs=10):
+        pass

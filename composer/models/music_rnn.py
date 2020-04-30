@@ -7,8 +7,11 @@ more information about the event-based sequence description.)
 
 import numpy as np
 import tensorflow as tf
+from pathlib import Path
+from tensorflow.keras import Model, Input, layers, optimizers, losses
+
 from composer.models import BaseModel, ModelSaveFrequencyMode
-from tensorflow.keras import Model, Input, layers
+from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
 
 def _get_rnn_model(event_vocab_size, batch_size, embedding_size, lstm_layers_count,
                    lstm_layer_sizes, lstm_dropout_probability, use_batch_normalization=True):
@@ -155,17 +158,75 @@ class MusicRNN(BaseModel):
 
         self.model.summary()
 
-    def train(self, dataset, logdir, restoredir=None, epochs=None,
+    def _compile_model(self, learning_rate):
+        '''
+        Compiles the model with sparse categorical crossentropy loss and
+        the Adam optimizer.
+
+        '''
+
+        loss = losses.SparseCategoricalCrossentropy(from_logits=True)
+        optimizer = optimizers.Adam(learning_rate=learning_rate)
+        self.model.compile(loss=loss, optimizer=optimizer, metrics=['accuracy'])
+
+    def train(self, dataset, input_shape, logdir, restoredir=None, epochs=None, learning_rate=1e-3,
               save_frequency_mode=ModelSaveFrequencyMode.EPOCH, save_frequency=1):
         '''
         Fit the model to the specified ``dataset``.
 
         :param dataset:
-            An iterable object containing feature, label pairs (as tuples).
+            An iterable object containing batched feature, label pairs (as tuples).
+            The dataset shape should be (batch_size, window_size, feature_size).
+        :param input_shape:
+            The shape of the input data. Expects (batch_size, window_size).
+        :param logdir:
+            The root log directory.
+        :param restoredir:
+            The log directory of the model to continue training. If both ``logdir``
+            and ``restoredir`` are specified, the ``restoredir`` will be used.
+
+            Defaults to ``None``.
         :param epochs:
             The number of epochs to train for. Defaults to ``None``, meaning
             that the model will train indefinitely.
+        :param learning_rate:
+            The initial learning rate of the optimizer. Defaults to 1e-3.
+        :param save_frequency_mode:
+            A :class:`composer.models.ModelSaveFrequency` indicating the units of 
+            the model save frequency. This can also be a string value corresponding
+            to the enum value. Defaults to :class:`ModelSaveFrequencyMode.EPOCH`.
+        :param save_frequency:
+            How often the model should be saved in units specified by the 
+            `save_frequency_mode` parameter. Defaults to 1.
 
         '''
 
-        pass
+        self._compile_model(learning_rate)
+
+        # We need to build the model so that it knows about the batch size.
+        self.model.build(input_shape=(input_shape[0], None))
+
+        logdir = Path(logdir)
+        initial_epoch = 0
+        if restoredir is not None:
+            checkpoint = tf.train.latest_checkpoint(restoredir)
+            if checkpoint is None:
+                logging.error('Failed to restore model from \'{}\'.'.format(restoredir))
+                exit(1)
+
+            self.model.load_weights(checkpoint)
+            logdir = Path(restoredir)
+
+            initial_epoch = int(re.search(r'(?<=model-)(.*)(?=-)', str(checkpoint)).group(0))
+
+        tensorboard_callback = TensorBoard(log_dir=str(logdir.absolute()), update_freq=25, profile_batch=0, write_graph=False, write_images=False)
+        model_checkpoint_path = logdir / 'model-{epoch:02d}-{loss:.2f}'
+
+        is_epoch_save_freq = save_frequency_mode == ModelSaveFrequencyMode.EPOCH
+        model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='loss', verbose=1, 
+                                                    save_freq='epoch' if is_epoch_save_freq else int(save_frequency),
+                                                    period=save_frequency if is_epoch_save_freq else None, 
+                                                    save_best_only=False, mode='auto', save_weights_only=True)
+
+        self.model.fit(dataset, epochs=epochs + initial_epoch, initial_epoch=initial_epoch,
+                       callbacks=[tensorboard_callback, model_checkpoint_callback])

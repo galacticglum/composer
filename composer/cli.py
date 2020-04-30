@@ -11,9 +11,11 @@ import click
 import logging
 import datetime
 import numpy as np
+
 import composer.config
-import composer.logging_utils as logging_utils
 import composer.dataset.preprocess
+import composer.logging_utils as logging_utils
+from composer.models import ModelSaveFrequencyMode
 
 from shutil import copy2
 from pathlib import Path
@@ -402,18 +404,6 @@ def get_default_config():
 
     return Path(__file__).parent / 'default_config.yml' 
 
-def compile_model(model, learning_rate):
-    '''
-    Compiles the specified ``model``.
-
-    '''
-
-    from tensorflow.keras import optimizers, losses
-
-    loss = losses.SparseCategoricalCrossentropy(from_logits=True)
-    optimizer = optimizers.Adam(learning_rate=learning_rate)
-    model.compile(loss=loss, optimizer=optimizer, metrics=['accuracy'])
-
 @cli.command()
 @click.argument('model-type', type=EnumType(ModelType, False))
 @click.option('-c', '--config', 'config_filepath', default=None, 
@@ -517,20 +507,16 @@ def get_config_from_restoredir(restoredir):
               '(rather than into memory all at once). Defaults to False.')
 @click.option('--max-files', default=None, help='The maximum number of files to load. Defaults to None, which means ' + 
               'that ALL files will be loaded.', type=int)
-@click.option('--save-freq', default=1000, help='The frequency at which to save the model. This can be \'epoch\' or integer. ' +
-              'When using \'epoch\', the model will be saved every epoch; otherwise, it saves after the specified number of batches. ' +
-              'Defaults to \'epoch\'. To set the epoch save period, use the \'epoch-save-period\' option.', type=str)
-@click.option('--epoch-save-period', default=1, help='This value indicates the frequency, in epochs, that the model is saved. ' +
-              'For example, if set to 10, the model will be saved every 10 epochs. Defaults to 1.', type=int)
+@click.option('--save-freq-mode', 'save_frequency_mode', type=EnumType(ModelSaveFrequencyMode, False),
+              help='The units of the save frequency. Defaults to EPOCH.', default='epoch')
+@click.option('--save-freq', 'save_frequency', help='The frequency at which to save the model (in the units specified ' +
+              'by the save frequency mode). Defaults to 1.', type=int, default=1)
 def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs, 
-          use_generator, max_files, save_freq, epoch_save_period):
+          use_generator, max_files, save_frequency_mode, save_frequency):
     '''
     Trains the specified model.
 
     '''
-
-    import tensorflow as tf
-    from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
 
     if restoredir is not None:
         config = get_config_from_restoredir(restoredir)
@@ -564,35 +550,15 @@ def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs,
 
             copy_config_file.write(out_config)
 
-    model, _ = create_model(model_type, config)
-    compile_model(model, get_learning_rate(model_type, config))
+    model, _ = create_model(model_type, config)  
 
-    # We need to build the model so that it knows about the batch size.
-    model.build(input_shape=(get_batch_size(model_type, config), None))
-
-    if restoredir is not None:
-        checkpoint = tf.train.latest_checkpoint(restoredir)
-        if checkpoint is None:
-            logging.error('Failed to restore model checkpoint from \'{}\'.'.format(restoredir))
-            exit(1)
-
-        model.load_weights(checkpoint)
-        model_logdir = Path(restoredir)
-
-        initial_epoch = int(re.search(r'(?<=model-)(.*)(?=-)', str(checkpoint)).group(0))
-
-    tensorboard_callback = TensorBoard(log_dir=str(model_logdir.absolute()), update_freq=25, profile_batch=0, write_graph=False, write_images=False)
-    model_checkpoint_path = model_logdir / 'model-{epoch:02d}-{loss:.2f}'
-
-    is_epoch_save_freq = not save_freq.isdigit()
-    model_checkpoint_callback = ModelCheckpoint(filepath=str(model_checkpoint_path.absolute()), monitor='loss', verbose=1, 
-                                                save_freq='epoch' if is_epoch_save_freq else int(save_freq),
-                                                period=epoch_save_period if is_epoch_save_freq else None, 
-                                                save_best_only=False, mode='auto', save_weights_only=True)
-
+    input_shape = (get_batch_size(model_type, config), get_window_size(model_type, config))
+    learning_rate = get_learning_rate(model_type, config)
     train_dataset = get_dataset(model_type, dataset_path, config, 'train', use_generator, max_files=max_files)
-    training_history = model.fit(train_dataset, epochs=epochs + initial_epoch, initial_epoch=initial_epoch,
-                                 callbacks=[tensorboard_callback, model_checkpoint_callback])
+    model.train(
+        train_dataset, input_shape, model_logdir, restoredir, epochs,
+        learning_rate, save_frequency_mode, save_frequency
+    )
 
 @cli.command()
 @click.argument('model-type', type=EnumType(ModelType, False))

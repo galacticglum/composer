@@ -10,6 +10,8 @@ a memory-efficient relative attention implementation.
 '''
 
 import logging
+import numpy as np
+from tqdm import tqdm
 import tensorflow as tf
 from pathlib import Path
 from composer.models import BaseModel, ModelSaveFrequencyMode
@@ -37,13 +39,13 @@ def norm(x, scope, *, axis=-1, epsilon=1e-5):
     '''
 
     with tf.compat.v1.variable_scope(scope):
-        n_state = x.shape[-1].value
+        n_state = x.shape[-1]
         
         g = tf.compat.v1.get_variable('g', [n_state], initializer=tf.compat.v1.constant_initializer(1))
         b = tf.compat.v1.get_variable('b', [n_state], initializer=tf.compat.v1.constant_initializer(0))
         u = tf.reduce_mean(x, axis=axis, keepdims=True)
         s = tf.reduce_mean(tf.square(x - u), axis=axis, keepdims=True)
-        x = (x - u) * tf.rsqrt(s + epsilon)
+        x = (x - u) * tf.math.rsqrt(s + epsilon)
         x = x * g + b
         return x
 
@@ -146,7 +148,7 @@ def attn(x, scope, n_state, attention_head_count):
         # q, k, v have shape [batch, heads, sequence, features]
         w = tf.matmul(q, k, transpose_b=True)
         w = w + relative_attn(q)
-        w = w * tf.rsqrt(tf.cast(v.shape[-1].value, w.dtype))
+        w = w * tf.math.rsqrt(tf.cast(v.shape[-1], w.dtype))
 
         w = mask_attn_weights(w)
         w = tf.nn.softmax(w)
@@ -165,7 +167,7 @@ def attn(x, scope, n_state, attention_head_count):
 
 def mlp(x, scope, n_state):
     with tf.compat.v1.variable_scope(scope):
-        nx = x.shape[-1].value
+        nx = x.shape[-1]
         h = gelu(conv1d(x, 'c_fc', n_state))
         h2 = conv1d(h, 'c_proj', nx)
         return h2
@@ -178,7 +180,7 @@ def block(x, scope, attention_head_count):
     '''
 
     with tf.compat.v1.variable_scope(scope):
-        nx = x.shape[-1].value
+        nx = x.shape[-1]
         a, present = attn(norm(x, 'ln_1'), 'attn', nx, attention_head_count)
         x = x + a
         m = mlp(norm(x, 'ln_2'), 'mlp', nx * 4)
@@ -282,15 +284,18 @@ class Transformer(BaseModel):
         self.scope = scope
         self.reuse_scope = reuse_scope
 
-    def train(self, dataset, logdir, restoredir=None, epochs=None, learning_rate=1e-3,
-              save_frequency_mode=ModelSaveFrequencyMode.EPOCH, save_frequency=1,
-              max_checkpoints=1, checkpoint_name_format='model-{global_step}gs',
+    def train(self, dataset, input_shape, logdir, restoredir=None, epochs=None,
+              learning_rate=1e-3, save_frequency_mode=ModelSaveFrequencyMode.EPOCH,
+              save_frequency=1, max_checkpoints=1, checkpoint_name_format='model-{global_step}gs',
               show_progress_bar=True):
         '''
         Fit the model to the specified ``dataset``.
 
         :param dataset:
-            An iterable object containing feature, label pairs (as tuples).
+            An iterable object containing batched feature, label pairs (as tuples).
+            The dataset shape should be (batch_size, window_size, feature_size).
+        :param input_shape:
+            The shape of the input data. Expects (batch_size, window_size).
         :param logdir:
             The root log directory.
         :param restoredir:
@@ -303,7 +308,7 @@ class Transformer(BaseModel):
             that the model will train indefinitely.
         :param learning_rate:
             The initial learning rate of the optimizer. Defaults to 1e-3.
-        :param save_frquency_mode:
+        :param save_frequency_mode:
             A :class:`composer.models.ModelSaveFrequency` indicating the units of 
             the model save frequency. This can also be a string value corresponding
             to the enum value. Defaults to :class:`ModelSaveFrequencyMode.EPOCH`.
@@ -327,24 +332,24 @@ class Transformer(BaseModel):
         '''
 
         save_frequency = ModelSaveFrequencyMode(save_frequency_mode)
+        tf.compat.v1.disable_eager_execution()
         tf.compat.v1.reset_default_graph()
 
-        batch_size, window_size = shape_list(next(dataset)[0])
-        X = tf.compat.v1.placeholder(tf.int32, [None, window_size])
-        Y = tf.compat.v1.placeholder(tf.int32, [None, window_size])
+        X = tf.compat.v1.placeholder(tf.int32, [None, input_shape[1]])
+        Y = tf.compat.v1.placeholder(tf.int32, [None, input_shape[1]])
 
         hparams = {
             'vocab_size': self.event_vocab_size,
             'embedding_size': self.embedding_size,
             'attention_head_count': self.attention_head_count,
             'decoder_layers_count': self.decoder_layers_count,
-            'scope': self.model,
+            'scope': self.scope,
             'reuse_scope': self.reuse_scope
         }
 
         logits, _ = _transformer_model(X, **hparams)
-        loss = tf.compat.v1.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=Y, logits=logits))
-        accuracy = tf.compat.v1.reduce_mean(tf.compat.v1.cast(tf.compat.v1.equal(Y, tf.argmax(logits, 1)), tf.float32))
+        loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=Y, logits=logits))
+        accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.cast(tf.argmax(logits, 2), tf.int32), Y), tf.float32))
 
         summary_loss = tf.compat.v1.summary.scalar('loss', loss)
         summary_accuracy = tf.compat.v1.summary.scalar('accuracy', accuracy)
@@ -352,6 +357,11 @@ class Transformer(BaseModel):
         global_step = tf.compat.v1.Variable(0, name='global_step')
         learning_rate = tf.compat.v1.Variable(learning_rate, name='learning_rate')
         train_step = tf.compat.v1.train.AdamOptimizer(learning_rate).minimize(loss, global_step)
+
+        use_iterator_op = False
+        if isinstance(dataset, tf.data.Dataset):
+            dataset_iterator_op = tf.compat.v1.data.make_one_shot_iterator(dataset).get_next()
+            use_iterator_op = True
 
         session = tf.compat.v1.Session(config=tf.compat.v1.ConfigProto())
 
@@ -386,9 +396,24 @@ class Transformer(BaseModel):
         current_epoch = 0
         steps_per_epoch = None
         while epochs is None or current_epoch < epochs:
-            logger.info('Epoch {}'.format(str(current_epoch + 1) if epochs is None else '{}/{}'.format(current_epoch + 1, epochs)))
+            logging.info('Epoch {}'.format(str(current_epoch + 1) if epochs is None else '{}/{}'.format(current_epoch + 1, epochs)))
             with tqdm(total=steps_per_epoch, disable=not show_progress_bar) as progress_bar:
-                for x, y in dataset:
+                if not use_iterator:
+                    # Restart the dataset iterator
+                    dataset_iterator = iter(dataset)
+
+                while True:
+                    if use_iterator_op:
+                        try:
+                            x, y = session.run([dataset_iterator_op])
+                        except tf.errors.OutOfRangeError:
+                            break
+                    else:
+                        try:
+                            x, y = next(dataset_iterator)
+                        except StopIteration:
+                            break
+
                     ops = [train_step, global_step, loss, summary_loss, accuracy, summary_accuracy]
                     _, _global_step, _loss, _summary_loss, _accuracy, _summary_accuracy = session.run(ops, feed_dict={X: x, Y: Y})
                     
@@ -410,3 +435,5 @@ class Transformer(BaseModel):
                     steps_per_epoch = progress_bar.n
 
                 current_epoch += 1
+
+        session.close()

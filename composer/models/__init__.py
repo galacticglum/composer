@@ -1,20 +1,20 @@
 import array
 import logging
 import numpy as np
-import tensorflow as tf
 import composer.dataset.sequence as sequence
 
-from enum import Enum, IntEnum
+from enum import Enum, IntEnum, unique
 from abc import ABC, abstractmethod
 from composer.utils import parallel_process
 
+@unique
 class ModelSaveFrequencyMode(Enum):
     '''
     Indicates the units of the model save frequency.
 
-    :ivar EPOCH:
+    :cvar EPOCH:
         The model save frequency is in epochs.
-    :ivar GLOBAL_STEP:
+    :cvar GLOBAL_STEP:
         The model save frequency is in global steps.
 
     '''
@@ -46,7 +46,7 @@ class BaseModel(ABC):
         :param epochs:
             The number of epochs to train for. Defaults to ``None``, meaning
             that the model will train indefinitely.
-        :param save_frquency_mode:
+        :param save_frequency_mode:
             A :class:`ModelSaveFrequency` indicating the units of the model save 
             frequency. This can also be a string value corresponding to the enum
             value. Defaults to :class:`ModelSaveFrequencyMode.EPOCH`.
@@ -175,6 +175,8 @@ def load_events(filepaths, use_generator=True, show_loading_progress_bar=True,
 
     '''
 
+    import tensorflow as tf
+
     if use_generator:
         # Convert filepaths to strings because TensorFlow cannot handle Pathlib objects.
         filepaths = [str(path) for path in filepaths]
@@ -266,7 +268,9 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=True,
         A :class:`tensorflow.data.Dataset` object representing the dataset.
 
     '''
-        
+    
+    import tensorflow as tf
+
     dataset = load_events(filepaths, use_generator, show_loading_progress_bar, input_event_encoding)
 
     # Split our dataset into sequences.
@@ -306,6 +310,8 @@ def load_tfrecord_dataset(filepath, shuffle=True):
         and a ``dict`` representing the header metadata contents.
 
     '''
+
+    import tensorflow as tf
 
     # Convert filepaths to strings because TensorFlow cannot handle Pathlib objects.
     dataset = tf.data.TFRecordDataset([str(filepath)])

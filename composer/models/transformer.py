@@ -203,8 +203,8 @@ def _transformer_model(inputs, vocab_size, embedding_size, attention_head_count,
     Run a single step of the Transformer-decoder model.
 
     :param vocab_size:
-            The size of the MIDI-like event-based description vocabulary.
-            This is the dimensionality of a one-hot vector encoded representation of an event.
+        The size of the MIDI-like event-based description vocabulary.
+        This is the dimensionality of a one-hot vector encoded representation of an event.
     :param embedding_size:
         The number of units in the embedding layer.
     :param attention_head_count:

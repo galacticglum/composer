@@ -187,7 +187,7 @@ def mlp(x, scope, n_state):
         return h2
 
 @tf.function
-def block(x, scope, attention_head_count):
+def decoder_block(x, scope, attention_head_count):
     '''
     A Transformer-decoder block.
     :note:
@@ -243,7 +243,7 @@ def _transformer_model(inputs, vocab_size, embedding_size, attention_head_count,
         # Transformer
         presents = []
         for layer in range(decoder_layers_count):
-            h, present = block(h, 'h%d' % layer, attention_head_count)
+            h, present = decoder_block(h, 'h%d' % layer, attention_head_count)
             presents.append(present)
         
         presents = tf.stack(presents, axis=1)

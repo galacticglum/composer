@@ -101,7 +101,7 @@ def create_model(model_type, config, **kwargs):
 
     def _create_transformer():
         return models.Transformer(
-            event_vocab_size, config.transformer.model.embedding_size,
+            50257, config.transformer.model.embedding_size,
             config.transformer.model.window_size, config.transformer.model.decoder_layers_count,
             config.transformer.model.attention_head_count, config.transformer.model.use_relative_attention,
             config.transformer.model.initializer_mean, config.transformer.model.initializer_stddev,
@@ -420,7 +420,9 @@ def summary(model_type, config_filepath):
     config = composer.config.get(config_filepath or get_default_config())
 
     model, _ = create_model(model_type, config)
-    model.build(input_shape=(get_batch_size(model_type, config), None))
+
+    batch, sequence = get_batch_size(model_type, config), get_window_size(model_type, config)
+    model.build(input_shape=(batch, sequence))
     model.summary()
 
 @cli.command()

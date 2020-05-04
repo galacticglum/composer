@@ -18,7 +18,6 @@ from pathlib import Path
 from composer.models import BaseModel, ModelSaveFrequencyMode
 from tensorflow.keras import layers, optimizers, losses
 
-@tf.function
 def shape_list(x):
     '''
     Deal with dynamic shape in tensorflow cleanly.
@@ -29,7 +28,6 @@ def shape_list(x):
     dynamic = tf.shape(x)
     return [dynamic[i] if s is None else s for i, s in enumerate(static)]
 
-@tf.function
 def gelu(x):
     '''
     Gaussian Error Linear Unit (GELU) activiation function.
@@ -329,8 +327,10 @@ class Attention(layers.Layer):
 
         if self.use_relative_attention:
             initializer = tf.keras.initializers.GlorotUniform()
-            # Input shape is [batch, sequence, features] and we only need sequence and features.
-            self.E = self.add_weight('E', shape=[self.attention_head_count, input_shape[1:]], initializer=initializer)
+            # Input shape is [batch, sequence, features] and we only need batch and sequence.
+            # The query shape is [heads, batch * sequence, features], and we need our weights to match that.
+            E_shape = (self.attention_head_count, input_shape[0] * input_shape[1], self.depth)
+            self.E = self.add_weight('E', shape=E_shape, initializer=initializer)
 
         super().build(input_shape)
 

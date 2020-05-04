@@ -1,68 +1,63 @@
 import array
 import logging
 import numpy as np
+import tensorflow as tf
 import composer.dataset.sequence as sequence
 
-from enum import Enum, IntEnum, unique
-from abc import ABC, abstractmethod
+from enum import IntEnum
+from abc import ABC, abstractmethod, abstractproperty
 from composer.utils import parallel_process
+from composer import ModelSaveFrequencyMode
 
-@unique
-class ModelSaveFrequencyMode(Enum):
+class BaseModel(tf.keras.Model):
     '''
-    Indicates the units of the model save frequency.
-
-    :cvar EPOCH:
-        The model save frequency is in epochs.
-    :cvar GLOBAL_STEP:
-        The model save frequency is in global steps.
-
-    '''
-
-    EPOCH = 'epoch'
-    GLOBAL_STEP = 'step'
-
-class BaseModel(ABC):
-    '''
-    A generic model interface class that is independent of TensorFlow/Keras. 
+    A generic model interface class.
 
     '''
 
     @abstractmethod
-    def train(self, dataset, logdir, restoredir=None, epochs=10, save_frequency_mode=ModelSaveFrequencyMode.EPOCH,
-              save_frequency=1, max_checkpoints=1):
+    def train(self, dataset, input_shape, logdir, restoredir=None, epochs=None,
+              learning_rate=1e-3, save_frequency_mode=ModelSaveFrequencyMode.EPOCH,
+              save_frequency=1, max_checkpoints=1, checkpoint_name_format='model-{global_step}gs',
+              show_progress_bar=True):
         '''
         Fit the model to the specified ``dataset``.
 
         :param dataset:
-            An iterable object containing feature, label pairs (as tuples).
+            An iterable object containing batched feature, label pairs (as tuples).
+            The dataset shape should be (batch_size, window_size, feature_size).
+        :param input_shape:
+            The shape of the input data. Expects (batch_size, window_size).
         :param logdir:
             The root log directory.
         :param restoredir:
             The log directory of the model to continue training. If both ``logdir``
             and ``restoredir`` are specified, the ``restoredir`` will be used.
-
             Defaults to ``None``.
         :param epochs:
             The number of epochs to train for. Defaults to ``None``, meaning
             that the model will train indefinitely.
+        :param learning_rate:
+            The initial learning rate of the optimizer. Defaults to 1e-3.
         :param save_frequency_mode:
-            A :class:`ModelSaveFrequency` indicating the units of the model save 
-            frequency. This can also be a string value corresponding to the enum
-            value. Defaults to :class:`ModelSaveFrequencyMode.EPOCH`.
+            A :class:`composer.models.ModelSaveFrequency` indicating the units of 
+            the model save frequency. This can also be a string value corresponding
+            to the enum value. Defaults to :class:`composer.ModelSaveFrequencyMode.EPOCH`.
         :param save_frequency:
             How often the model should be saved in units specified by the 
             `save_frequency_mode` parameter. Defaults to 1.
         :param max_checkpoints:
             The maximum number of checkpoints to keep. Defaults to 1.
-
-        '''
-
-        pass
-
-    def summary(self):
-        '''
-        Outputs a summary of the model.
+        :param checkpoint_name_format:
+            The format of the model checkpoint name. This can either be a string
+            value or a method that takes in the current epoch and current global step
+            and returns a string representing the checkpoint name.
+            The following formatting keys are supported:
+                * epochs: the current epoch (starts at 1).
+                * global_step: the current global step (starts at 1).
+        :param show_progress_bar:
+            Indicates whether a progress bar will be shown to indicate epoch status.
+            Defaults to ``True``.
 
         '''
 

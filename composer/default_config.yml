@@ -35,6 +35,13 @@ transformer:
         embedding_size: 512
         decoder_layers_count: 8
         attention_head_count: 16
+        use_relative_attention: false
+        attention_dropout_rate: 0.1
+        residual_dropout_rate: 0.1
+        layer_normalization_epsilon: 0.00001
+        scale_attention: true
+        initializer_mean: 0
+        initializer_stddev: 0.02
     train:
         batch_size: 1
         learning_rate: 0.001

@@ -7,79 +7,10 @@ more information about the event-based sequence description.)
 
 import numpy as np
 import tensorflow as tf
-from pathlib import Path
-from tensorflow.keras import Model, Input, layers, optimizers, losses
+from tensorflow.keras import Model, layers
+from composer.models import ModelSaveFrequencyMode
 
-from composer.models import BaseModel, ModelSaveFrequencyMode
-from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
-
-def _get_rnn_model(event_vocab_size, batch_size, embedding_size, lstm_layers_count,
-                   lstm_layer_sizes, lstm_dropout_probability, use_batch_normalization=True):
-    '''
-    Build the MusicRNN model.
-
-    :param event_vocab_size:
-        The size of the MIDI-like event-based description vocabulary.
-        This is the dimensionality of a one-hot vector encoded representation of an event.
-    :param batch_size:
-        The number of events in a single batch.
-    :param embedding_size:
-        The number of units in the embedding layer.
-    :param lstm_layers_count:
-        The number of LSTM layers.
-    :param lstm_layer_sizes:
-        The number of units in each LSTM layer. If this value is an integer, all LSTM layers 
-        in the model will have the same size; otheriwse, it should be an array-like object
-        (equal in size to the ``lstm_layers_count`` parameter) that denotes the size of each
-        LSTM layer in the network.
-    :param lstm_dropout_probability:
-        The probability (from 0 to 1) of dropping out an LSTM unit. If this value is a number,
-        the dropout will be uniform across all layers; otherwise, it should an array-like object
-        (equal in size to the ``lstm_layers_count`` parameter) that denotes the dropout probability
-        per LSTM layer in the network.
-    :param use_batch_normalization:
-        Indicates whether each LSTM layer should be followed by a :class:`tensorflow.keras.layers.BatchNormalization`
-        layer. Defaults to ``True``. 
-
-    '''
-
-    # Make sure that the layer sizes and dropout probabilities
-    # are sized appropriately (if they are not scalar values).
-    if not np.isscalar(lstm_layer_sizes):
-        assert len(lstm_layer_sizes) == lstm_layers_count
-    else:
-        # Convert lstm_layer_sizes to a numpy array of uniform elements.
-        lstm_layer_sizes = np.full(lstm_layers_count, lstm_layer_sizes)
-
-    if not np.isscalar(lstm_dropout_probability):
-        assert len(lstm_dropout_probability) == lstm_layers_count
-    else:
-        # Convert lstm_dropout_probability to a numpy array of uniform elements.
-        lstm_dropout_probability = np.full(lstm_layers_count, lstm_dropout_probability)
-
-    inputs = Input(batch_shape=(batch_size, None))
-    embedding_layer = layers.Embedding(event_vocab_size, embedding_size)
-    
-    x = embedding_layer(inputs)
-    for i in range(lstm_layers_count):
-        lstm_layer = layers.LSTM(lstm_layer_sizes[i], return_sequences=True, 
-                                 stateful=True, recurrent_initializer='glorot_uniform')
-
-        x = lstm_layer(x)
-        if lstm_dropout_probability[i] > 0:
-            dropout_layer = layers.Dropout(lstm_dropout_probability[i])
-            x = dropout_layer(x)
-
-        if use_batch_normalization:
-            layer_normalization = layers.BatchNormalization()
-            x = layer_normalization(x)
-    
-    output_layer = layers.Dense(event_vocab_size)
-    outputs = output_layer(x)
-
-    return Model(inputs=inputs, outputs=outputs, name='music_rnn')
-
-class MusicRNN(BaseModel):
+class MusicRNN(Model):
     '''
     A recurrent neural network model designed to generate music based on an
     MIDI-like event-based description language.
@@ -113,15 +44,16 @@ class MusicRNN(BaseModel):
 
     '''
 
-    def __init__(self, event_vocab_size, batch_size, embedding_size, lstm_layers_count,
+    def __init__(self, vocab_size, batch_size, embedding_size, lstm_layers_count,
                  lstm_layer_sizes, lstm_dropout_probability, use_batch_normalization=True):
 
         '''
         Initialize an instance of :class:`MusicRNN`.
 
-        :param event_vocab_size:
-            The size of the MIDI-like event-based description vocabulary.
-            This is the dimensionality of a one-hot vector encoded representation of an event.
+        :param vocab_size:
+            An integer denoting the dimensions of a single feature (i.e. the size of an event sequence).
+            The network takes in a sequence of these events and outputs an event in the form of a sequence
+            of the same size denoting the next event in the sequence.
         :param batch_size:
             The number of events in a single batch.
         :param embedding_size:
@@ -141,36 +73,75 @@ class MusicRNN(BaseModel):
         :param use_batch_normalization:
             Indicates whether each LSTM layer should be followed by a :class:`tensorflow.keras.layers.BatchNormalization`
             layer. Defaults to ``True``. 
+        :note:
+            This sets up the model architecture and layers.
 
         '''
 
-        # Build the keras model
-        self.model = _get_rnn_model(
-            event_vocab_size, batch_size, embedding_size, lstm_layers_count,
-            lstm_layer_sizes, lstm_dropout_probability, use_batch_normalization=True
-        )
+        super().__init__(name='music_rnn')
+        self.lstm_layers_count = lstm_layers_count
 
-    def summary(self):
+        # Make sure that the layer sizes and dropout probabilities
+        # are sized appropriately (if they are not scalar values).
+        if not np.isscalar(lstm_layer_sizes):
+            assert len(lstm_layer_sizes) == lstm_layers_count
+        else:
+            # Convert lstm_layer_sizes to a numpy array of uniform elements.
+            lstm_layer_sizes = np.full(lstm_layers_count, lstm_layer_sizes)
+
+        if not np.isscalar(lstm_dropout_probability):
+            assert len(lstm_dropout_probability) == lstm_layers_count
+        else:
+            # Convert lstm_dropout_probability to a numpy array of uniform elements.
+            lstm_dropout_probability = np.full(lstm_layers_count, lstm_dropout_probability)
+
+        self.embedding_layer = layers.Embedding(vocab_size, embedding_size, batch_input_shape=(batch_size, None))
+        self.lstm_layers = []
+        self.dropout_layers = []
+        self.normalization_layers = []
+        for i in range(lstm_layers_count):
+            self.lstm_layers.append(layers.LSTM(lstm_layer_sizes[i], return_sequences=True, 
+                                    stateful=True, recurrent_initializer='glorot_uniform'))
+
+            if lstm_dropout_probability[i] > 0:
+                self.dropout_layers.append(layers.Dropout(lstm_dropout_probability[i]))
+
+            if use_batch_normalization:
+                self.normalization_layers.append(layers.BatchNormalization())
+
+        self.use_normalization_layers = len(self.normalization_layers) == lstm_layers_count
+        self.use_dropout_layers = len(self.dropout_layers) == lstm_layers_count
+        self.output_layer = layers.Dense(vocab_size)
+
+    def call(self, inputs):
         '''
-        Outputs a summary of the MusicRNN model.
+        Feed forward call on this network.
+
+        :param inputs:
+            The inputs to the network. This should be an array-like object containing
+            sequences (of size :attr:`MusicRNN.window_size`) of :attr:`MusicRNN.event_dimensions`
+            -dimensional one-hot vectors representing the events.
 
         '''
 
-        self.model.summary()
+        inputs = self.embedding_layer(inputs)
+        for i in range(self.lstm_layers_count):
+            # Apply LSTM layer
+            inputs = self.lstm_layers[i](inputs)
 
-    def _compile_model(self, learning_rate):
-        '''
-        Compiles the model with sparse categorical crossentropy loss and
-        the Adam optimizer.
+            if self.use_dropout_layers:
+                inputs = self.dropout_layers[i](inputs)
+            
+            if self.use_normalization_layers:
+                inputs = self.normalization_layers[i](inputs)
 
-        '''
-
-        loss = losses.SparseCategoricalCrossentropy(from_logits=True)
-        optimizer = optimizers.Adam(learning_rate=learning_rate)
-        self.model.compile(loss=loss, optimizer=optimizer, metrics=['accuracy'])
-
-    def train(self, dataset, input_shape, logdir, restoredir=None, epochs=None, learning_rate=1e-3,
-              save_frequency_mode=ModelSaveFrequencyMode.EPOCH, save_frequency=1):
+        inputs = self.output_layer(inputs)   
+        return inputs
+    
+    def train(self, dataset, input_shape, logdir, restoredir=None, epochs=None,
+              learning_rate=1e-3, save_frequency_mode=ModelSaveFrequencyMode.EPOCH,
+              save_frequency=1, max_checkpoints=1, checkpoint_name_format='model-{global_step}gs',
+              show_progress_bar=True):
         '''
         Fit the model to the specified ``dataset``.
 
@@ -184,7 +155,6 @@ class MusicRNN(BaseModel):
         :param restoredir:
             The log directory of the model to continue training. If both ``logdir``
             and ``restoredir`` are specified, the ``restoredir`` will be used.
-
             Defaults to ``None``.
         :param epochs:
             The number of epochs to train for. Defaults to ``None``, meaning
@@ -194,17 +164,31 @@ class MusicRNN(BaseModel):
         :param save_frequency_mode:
             A :class:`composer.models.ModelSaveFrequency` indicating the units of 
             the model save frequency. This can also be a string value corresponding
-            to the enum value. Defaults to :class:`ModelSaveFrequencyMode.EPOCH`.
+            to the enum value. Defaults to :class:`composer.ModelSaveFrequencyMode.EPOCH`.
         :param save_frequency:
             How often the model should be saved in units specified by the 
             `save_frequency_mode` parameter. Defaults to 1.
+        :param max_checkpoints:
+            The maximum number of checkpoints to keep. Defaults to 1.
+        :param checkpoint_name_format:
+            The format of the model checkpoint name. This can either be a string
+            value or a method that takes in the current epoch and current global step
+            and returns a string representing the checkpoint name.
+            The following formatting keys are supported:
+                * epochs: the current epoch (starts at 1).
+                * global_step: the current global step (starts at 1).
+        :param show_progress_bar:
+            Indicates whether a progress bar will be shown to indicate epoch status.
+            Defaults to ``True``.
 
         '''
 
-        self._compile_model(learning_rate)
-
+        loss = losses.SparseCategoricalCrossentropy(from_logits=True)
+        optimizer = optimizers.Adam(learning_rate=learning_rate)
+        self.compile(loss=loss, optimizer=optimizer, metrics=['accuracy'])
+        
         # We need to build the model so that it knows about the batch size.
-        self.model.build(input_shape=(input_shape[0], None))
+        self.build(input_shape=(input_shape[0], None))
 
         logdir = Path(logdir)
         initial_epoch = 0
@@ -214,7 +198,7 @@ class MusicRNN(BaseModel):
                 logging.error('Failed to restore model from \'{}\'.'.format(restoredir))
                 exit(1)
 
-            self.model.load_weights(checkpoint)
+            self.load_weights(checkpoint)
             logdir = Path(restoredir)
 
             initial_epoch = int(re.search(r'(?<=model-)(.*)(?=-)', str(checkpoint)).group(0))
@@ -228,5 +212,5 @@ class MusicRNN(BaseModel):
                                                     period=save_frequency if is_epoch_save_freq else None, 
                                                     save_best_only=False, mode='auto', save_weights_only=True)
 
-        self.model.fit(dataset, epochs=epochs + initial_epoch, initial_epoch=initial_epoch,
+        self.fit(dataset, epochs=epochs + initial_epoch, initial_epoch=initial_epoch,
                        callbacks=[tensorboard_callback, model_checkpoint_callback])

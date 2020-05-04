@@ -9,12 +9,14 @@ a memory-efficient relative attention implementation.
 
 '''
 
+import math
 import logging
 import numpy as np
 from tqdm import tqdm
 import tensorflow as tf
 from pathlib import Path
 from composer.models import BaseModel, ModelSaveFrequencyMode
+from tensorflow.keras import layers, optimizers, losses
 
 @tf.function
 def shape_list(x):
@@ -35,114 +37,318 @@ def gelu(x):
 
     return 0.5*x*(1+tf.tanh(np.sqrt(2/np.pi)*(x+0.044715*tf.pow(x, 3))))
 
-@tf.function
-def norm(x, scope, *, axis=-1, epsilon=1e-5):
+def get_padding_mask(x):
     '''
-    Normalize to mean = 0, std = 1, then do a diagonal affine transform.
+    Gets a padded mask.
+
     '''
 
-    with tf.name_scope(scope):
-        n_state = x.shape[-1]
+    x = tf.cast(tf.math.equal(x, 0), tf.float32)
+    # add extra dimensions to add the padding to the attention logits.
+    return x[:, tf.newaxis, tf.newaxis, :]  # (batch_size, 1, 1, seq_len)
+
+def attention_mask(size):
+    '''
+    Creates an attention mask with the specified size.
+
+    :note:
+        If size is 4 then it returns below matrix
+        [[0., 1., 1., 1.],
+         [0., 0., 1., 1.],
+         [0., 0., 0., 1.],
+         [0., 0., 0., 0.]]
+    '''
+
+    mask = 1 - tf.linalg.band_part(tf.ones((size, size)), -1, 0)
+    return mask  # (seq_len, seq_len)
+
+def create_attention_mask(inputs):
+    '''
+    Creates attention masks for the specified ``inputs``.
+
+    '''
+
+    att_mask = attention_mask(tf.shape(inputs)[1])
+    padding_mask = get_padding_mask(inputs)
+    mask = tf.maximum(padding_mask, att_mask)
+    return mask
+
+class SharedTokenEmbedding(tf.keras.layers.Layer):
+    '''
+    A shared token embedding layer.
+
+    '''
+
+    def __init__(self, vocab_size, hidden_size, initializer_mean=0, initializer_stddev=0.02, **kwargs):
+        '''
+        Initializes an instance of :class:`SharedTokenEmbedding`.
+
+        :param vocab_size:
+            The number of unique integer ids to expect.
+        :param hidden_size:
+            The number of units in the embedding layer.
+        :param initializer_mean:
+            The mean of the truncated random normal initializer. Defaults to 0.
+        :param initializer_stddev:
+            The standard deviation of the truncated random normal initializer.
+            Defaults to 0.02.
+
+        '''
+
+        super().__init__(**kwargs)
+
+        self.vocab_size = vocab_size
+        self.hidden_size = hidden_size
+        self.initializer_mean = initializer_mean
+        self.initializer_stddev = initializer_stddev or hidden_size**-0.5
+
+    def build(self, input_shape):
+        '''
+        Builds the embedding layer and initializes weights.
         
-        g = tf.Variable(tf.constant_initializer(1)([n_state]), name='g')
-        b = tf.Variable(tf.constant_initializer(0)([n_state]), name='b')
-        u = tf.reduce_mean(x, axis=axis, keepdims=True)
-        s = tf.reduce_mean(tf.square(x - u), axis=axis, keepdims=True)
-        x = (x - u) * tf.math.rsqrt(s + epsilon)
-        x = x * g + b
-        return x
-
-@tf.function
-def split_states(x, n):
-    '''
-    Reshape the last dimension of x into [n, x.shape[-1] / n].
-
-    '''
-
-    *start, m = shape_list(x)
-    return tf.reshape(x, start + [n, m // n])
-
-@tf.function
-def merge_states(x):
-    '''
-    Smash the last two dimensions of x into a single dimension.
-    
-    '''
-
-    *start, a, b = shape_list(x)
-    return tf.reshape(x, start + [a * b])
-
-@tf.function
-def conv1d(x, scope, nf, *, w_init_stdev=0.02):
-    '''
-    One-dimensional convolution layer.
-
-    '''
-
-    with tf.name_scope(scope):
-        *start, nx = shape_list(x)
+        '''
         
-        w = tf.Variable(tf.random_normal_initializer(stddev=w_init_stdev)([1, nx, nf]), name='w')
-        b = tf.Variable(tf.constant_initializer(0)([nf]), name='b')
-        c = tf.reshape(tf.matmul(tf.reshape(x, [-1, nx]), tf.reshape(w, [-1, nf])) + b, start + [nf])
-        return c
+        weight_shape = [self.vocab_size, self.hidden_size]
+        weight_initializer = tf.keras.initializers.TruncatedNormal(mean=self.initializer_mean, stddev=self.initializer_stddev)
+        self.weight = self.add_weight('weight', shape=weight_shape, initializer=weight_initializer)
 
-@tf.function
-def attention_mask(nd, ns, *, dtype):
+        super().build(input_shape)
+
+    def call(self, inputs, mode='embedding'):
+        '''
+        Get token embeddings of inputs.
+
+        :param inputs:
+            An int tensor with shape [batch_size, length].
+        :param mode:
+            A string indicating the behaviour of the embedding layer. Either "embedding" or "linear".
+        :returns:
+            If ``mode`` is "embedding", this layer returns a float32 embedding tensor with shape
+            [batch_size, length, hidden_size] representing the ``inputs`` as dense float vectors.
+
+            If ``mode`` is "linear", this layer returns a float32 linear tensor with shape
+            [batch_size, length, vocab_size].
+
+        '''
+
+        if mode == 'embedding':
+            return tf.gather(self.weight, inputs)
+        elif mode == 'linear':
+            input_shape = shape_list(inputs)[:-1]
+            x = tf.reshape(inputs, [-1, self.hidden_size])
+            logits = tf.matmul(x, self.weight, transpose_b=True)
+
+            return tf.reshape(logits, input_shape + [self.vocab_size])
+        else:
+            raise ValueError('\'{}\' is not a valid Embedding mode.'.format(mode))
+
+class PositionEmbedding(layers.Layer):
     '''
-    1's in the lower triangle, counting from the lower right corner.
-    Same as tf.matrix_band_part(tf.ones([nd, ns]), -1, ns-nd), but doesn't produce garbage on TPUs.
-
-    
-    '''
-
-    i = tf.range(nd)[:,None]
-    j = tf.range(ns)
-    m = i >= j - ns + nd
-    return tf.cast(m, dtype)
-
-@tf.function
-def attn(x, scope, n_state, attention_head_count):
-    '''
-    Memory-efficient relative attention unit.
+    An embedding layer the encodes positional information.
 
     '''
 
-    # Should be [batch, sequence, features]
-    assert x.shape.ndims == 3
-    assert n_state % attention_head_count == 0
+    def __init__(self, sequence_length, hidden_size, initializer_mean=0, initializer_stddev=0.02, **kwargs):
+        '''
+        Initializes an instance of :class:`PositionEmbedding`.
 
-    @tf.function
-    def split_heads(x):
-        # From [batch, sequence, features] to [batch, heads, sequence, features]
-        return tf.transpose(split_states(x, attention_head_count), [0, 2, 1, 3])
+        :param sequence_length:
+            The expected length of an input sequence.
+        :param hidden_size:
+            The number of units in the embedding layer. This is the dimesnionality
+            of the output dense float vector representation of the input.
+        :param initializer_mean:
+            The mean of the truncated random normal initializer. Defaults to 0.
+        :param initializer_stddev:
+            The standard deviation of the truncated random normal initializer.
+            Defaults to 0.02.
 
-    @tf.function
-    def merge_heads(x):
-        # Reverse of split_heads
-        return merge_states(tf.transpose(x, [0, 2, 1, 3]))
+        '''
 
-    @tf.function
-    def mask_attn_weights(w):
-        # w has shape [batch, heads, dst_sequence, src_sequence], where information flows from src to dst.
-        _, _, nd, ns = shape_list(w)
-        b = attention_mask(nd, ns, dtype=w.dtype)
-        b = tf.reshape(b, [1, 1, nd, ns])
-        w = w * b - tf.cast(1e10, w.dtype)*(1 - b)
-        return w
-    
-    @tf.function
-    def relative_attn(q):
+        super().__init__(**kwargs)
+
+        embeddings_initializer = tf.keras.initializers.TruncatedNormal(mean=initializer_mean, stddev=initializer_stddev)
+        self.embedding = layers.Embedding(sequence_length, hidden_size, embeddings_initializer=embeddings_initializer)
+
+    def call(self, inputs, start=1):
+        '''
+        Get position embeddings of inputs.
+
+        :param inputs:
+            An int tensor with shape [batch_size, length].
+        :param start:
+            The start position of the input sequence.
+        :returns:
+            A float32 tensor with shape [batch_size, length, hidden_size] representing the
+            ``inputs`` as dense float vectors (with positional encoding).
+
+        '''
+
+        batch, sequence = shape_list(inputs)[:2]
+
+        positions = tf.reshape(tf.tile(tf.range(start, sequence + start), [batch]), [batch, sequence])
+        positions = tf.cast(positions, tf.int32)
+        mask = tf.cast(tf.not_equal(inputs, 0), tf.int32)
+        positions *= mask
+
+        return self.embedding(positions)
+
+class Conv1D(layers.Layer):
+    '''
+    A one-dimensional convolution layer as defined by Radford et al. in the GPT paper.
+
+    :note:
+        At its essence, this is a fully connected (dense) linear layer; however,
+        with transposed weights. So, Y = X * W^T + B.
+
+    '''
+
+    def __init__(self, hidden_size, filter_size, initializer_mean=0.0,
+                 initializer_stddev=0.02, **kwargs):
+        '''
+        Initializes an instance of :class:`Conv1D`.
+
+        :param hidden_size:
+            The number of units in the convolutional layer.
+        :param filter_size:
+            The size of a convolutional filter.
+        :param initializer_mean:
+            The mean of the truncated random normal initializer. Defaults to 0.
+        :param initializer_stddev:
+            The standard deviation of the truncated random normal initializer.
+            Defaults to 0.02.
+
+        '''
+
+        super().__init__(**kwargs)
+
+        self.hidden_size = hidden_size
+        self.filter_size = filter_size
+        self.initializer_mean = initializer_mean
+        self.initializer_stddev = initializer_stddev
+
+    def build(self, input_shape):
+        '''
+        Builds the convolutional layer and initializes weights.
+
+        '''
+
+        weight_initializer = tf.keras.initializers.TruncatedNormal(mean=self.initializer_mean, stddev=self.initializer_stddev)
+        self.weight = self.add_weight('weight', shape=[self.hidden_size, self.filter_size], initializer=weight_initializer)
+        self.bias = self.add_weight('bias', shape=[1, self.filter_size], initializer=tf.zeros_initializer())
+
+        super().build(input_shape)
+
+    def call(self, inputs):
+        '''
+        Gets convolutions on the specified ``inputs``.
+
+        :param inputs:
+            A 3-dimensional float32 tensor of shape [batch, sequence, features].
+        :returns:
+            A float32 tensor with shape [batch_size, length, filter_size].
+
+        '''
+
+        batch, sequence = shape_list(inputs)[:2]
+        inputs = tf.reshape(inputs, [-1, self.hidden_size])
+        inputs = tf.matmul(inputs, self.weight) + self.bias
+        inputs = tf.reshape(inputs, [batch, sequence, self.filter_size])
+        return inputs
+
+class Attention(layers.Layer):
+    '''
+    A multihead attention layer that supports both absolute and relative attention.
+
+    '''
+
+    def __init__(self, hidden_size, attention_head_count, attention_dropout_rate=0.1,
+                 residual_dropout_rate=0.1, scale=False, use_relative_attention=False,
+                 output_attention_weights=False, initializer_mean=0.0,
+                 initializer_stddev=0.02, **kwargs):
+        '''
+        Initialize an instance of :class:`Attention`.
+
+        :param hidden_size:
+            The number of units in a single attention head.
+        :param attention_head_count:
+            The number of attention heads.
+        :param attention_dropout_rate:
+            The dropout rate for the attention convolutional layer.
+        :param residual_dropout_rate:
+            The dropout rate for all fully connected (dense) linear layers.
+        :param scale:
+            Indicates whether the attention scores should be scaled. Defaults to ``False``.
+        :param use_relative_attention:
+            Indicates whether to use relative attention. Defaults to ``False``.
+        :param output_attention_weights:
+            Indicates whether to output the attention weights along with the scores and present states.
+            Defaults to ``False``, meaning that no attention weights will be outputed.
+        :param initializer_mean:
+            The mean of the truncated random normal initializer. Defaults to 0.
+        :param initializer_stddev:
+            The standard deviation of the truncated random normal initializer.
+            Defaults to 0.02.
+
+        '''
+        super().__init__(**kwargs)
+
+        self.hidden_size = hidden_size
+        self.attention_head_count = attention_head_count
+        self.scale = scale
+        self.use_relative_attention = use_relative_attention
+
+        # The hidden size must be a multiple of the attention head count.
+        assert hidden_size % attention_head_count == 0
+        # The depth refers to the size (numbers of units) of a single head.
+        self.depth = hidden_size // attention_head_count
+
+        self.c_attn = Conv1D(
+            hidden_size, hidden_size * 3,
+            initializer_mean=initializer_mean,
+            initializer_stddev=initializer_stddev,
+            name='c_attn'
+        )
+        
+        self.c_proj = Conv1D(
+            hidden_size, hidden_size,
+            initializer_mean=initializer_mean,
+            initializer_stddev=initializer_stddev,
+            name='c_proj'
+        )
+
+        self.attention_dropout = layers.Dropout(attention_dropout_rate)
+        self.residual_dropout = layers.Dropout(residual_dropout_rate)
+        self.output_attention_weights = output_attention_weights
+
+    def build(self, input_shape):
+        '''
+        Builds the attention layer and initializes weights.
+
+        '''
+
+        if self.use_relative_attention:
+            initializer = tf.keras.initializers.GlorotUniform()
+            # Input shape is [batch, sequence, features] and we only need sequence and features.
+            self.E = self.add_weight('E', shape=[self.attention_head_count, input_shape[1:]], initializer=initializer)
+
+        super().build(input_shape)
+
+    def _relative_attention(self, q):
+        '''
+        Gets the relative attention score of a query tensor.
+
+        '''
+
         # q have shape [batch, heads, sequence, features]
         batch, heads, sequence, features = shape_list(q)
         
-        E = tf.Variable(tf.keras.initializers.glorot_uniform()([heads, sequence, features]), name='E')
         # [heads, batch, sequence, features]
         q_ = tf.transpose(q, [1, 0, 2, 3])
         # [heads, batch * sequence, features]
         q_ = tf.reshape(q_, [heads, batch * sequence, features])
         # [heads, batch * sequence, sequence]
-        rel = tf.matmul(q_, E, transpose_b=True)
+        rel = tf.matmul(q_, self.E, transpose_b=True)
         # [heads, batch, sequence, sequence]
         rel = tf.reshape(rel, [heads, batch, sequence, sequence])
         # [heads, batch, sequence, 1+sequence]
@@ -156,104 +362,227 @@ def attn(x, scope, n_state, attention_head_count):
 
         return rel
 
-    @tf.function
-    def multihead_attn(q, k, v):
+    def _multihead_attention(self, q, k, v, training, mask=None):
+        '''
+        Gets the attention scores and weights for a query, key, and value triplet.
+
+        '''
+
         # q, k, v have shape [batch, heads, sequence, features]
-        w = tf.matmul(q, k, transpose_b=True)
-        w = w + relative_attn(q)
-        w = w * tf.math.rsqrt(tf.cast(v.shape[-1], w.dtype))
+        w = tf.matmul(q, k, transpose_b=True)  # (..., seq_len_q, seq_len_k)
+        if self.use_relative_attention:
+            w = w + self._relative_attention(q)
 
-        w = mask_attn_weights(w)
-        w = tf.nn.softmax(w)
-        a = tf.matmul(w, v)
-        return a
+        if self.scale:
+            # scale the attention scores
+            w = w * tf.math.rsqrt(tf.cast(v.shape[-1], w.dtype))
 
-    with tf.name_scope(scope):
-        c = conv1d(x, 'c_attn', n_state*3)
-        q, k, v = map(split_heads, tf.split(c, 3, axis=2))
+        if mask is not None:
+            w += (mask * -1e9)
+
+        w = tf.nn.softmax(w, axis=-1)  # (..., seq_len_q, seq_len_k)
+        w = self.attention_dropout(w, training=training)
+
+        output = tf.matmul(w, v)  # (..., seq_len_q, depth_v)
+        return output, w
+
+    def _split_heads(self, x):
+        '''
+        Splits the input tensor into a new tensor of shape [batch_size, sequence, attention_head_count, depth].
+
+        '''
+
+        batch_size = tf.shape(x)[0]
+        x = tf.reshape(x, (batch_size, -1, self.attention_head_count, self.depth))
+        return tf.transpose(x, perm=[0, 2, 1, 3])
+
+    def _merge_heads(self, x):
+        '''
+        Merges the input tensor, which contains data split into each attention head, into a new tensor
+        of shape [batch_size, sequence, hidden_size].
+
+        '''
+
+        batch_size = tf.shape(x)[0]
+        x = tf.transpose(x, perm=[0, 2, 1, 3])
+        # (batch_size, seq_len_q, attention_head_count, depth)
+        merged = tf.reshape(x, (batch_size, -1, self.hidden_size))
+        # (batch_size, seq_len_q, hidden_size)
+        return merged
+
+    def call(self, inputs, past=None, mask=None, training=False):
+        '''
+        Gets the attention scores and present state of the attention layer.
+
+        :param inputs:
+            A 3-dimensional float32 tensor of shape [batch, sequence, features].
+        :param past:
+            The previous (past) state of this attention layer.
+        :param mask:
+            The attention mask. Defaults to ``None``.
+        :param training:
+            Indicates whether this step is training. Defaults to ``False``.
+        :returns:
+            The attention scores and the present state.  if ``output_attention_weights``
+            is ``True``, the attention weights will be returned.
+
+        '''
+
+        inputs = self.c_attn(inputs)
+        q, k, v = tf.split(inputs, 3, axis=2)
+
+        # Split query, key, and value heads.
+        q = self._split_heads(q)
+        k = self._split_heads(k)
+        v = self._split_heads(v)
+
+        if past is not None:
+            past_k, past_v = tf.unstack(past, axis=1)
+            k = tf.concat([past_k, k], axis=-2)
+            v = tf.concat([past_v, v], axis=-2)
+
         present = tf.stack([k, v], axis=1)
+        output, w = self._multihead_attention(q, k, v, training, mask)
+        output = self._merge_heads(output)
 
-        a = multihead_attn(q, k, v)
-        a = merge_heads(a)
-        a = conv1d(a, 'c_proj', n_state)
-        return a, present
+        output = self.c_proj(output)  # (batch_size, seq_len_q, hidden_size)
+        output = self.residual_dropout(output, training=training)
+        
+        result = [output, present]
+        if self.output_attention_weights:
+            result.append(w)
+        
+        return result
 
-@tf.function
-def mlp(x, scope, n_state):
-    with tf.name_scope(scope):
-        nx = x.shape[-1]
-        h = gelu(conv1d(x, 'c_fc', n_state))
-        h2 = conv1d(h, 'c_proj', nx)
-        return h2
-
-@tf.function
-def decoder_block(x, scope, attention_head_count):
+class MultilayerPerceptron(layers.Layer):
     '''
-    A Transformer-decoder block.
-    :note:
-        These are stacked to create the final model.
+    A multi-layer perceptron which consists of two one-dimensional convolutional
+    layers: the hidden and output layers respectively.
+
     '''
 
-    with tf.name_scope(scope):
-        nx = x.shape[-1]
-        a, present = attn(norm(x, 'ln_1'), 'attn', nx, attention_head_count)
-        x = x + a
-        m = mlp(norm(x, 'ln_2'), 'mlp', nx * 4)
+    def __init__(self, hidden_size, filter_size, dropout_rate=0.1,
+                 initializer_mean=0.0, initializer_stddev=0.02, activation=gelu, **kwargs):
+        '''
+        Initializes an instance of :class:`MultilayerPerceptron`.
+
+        :param hidden_size:
+            The number of units in the hidden layer.
+        :param filter_size:
+            The size of a convolutional filter.
+        :param dropout_rate:
+            The dropout rate on the final output of this layer.
+        :param initializer_mean:
+            The mean of the truncated random normal initializer. Defaults to 0.
+        :param initializer_stddev:
+            The standard deviation of the truncated random normal initializer.
+            Defaults to 0.02.
+        :param activation:
+            The activation function to use on the fully connected hidden layer.
+            Defaults to the Gaussian Error Linear Unit (GELU) activiation function.
+
+        '''
+
+        super().__init__(**kwargs)
+
+        self.activation = activation
+        self.c_fc = Conv1D(
+            filter_size, hidden_size,
+            initializer_mean=initializer_mean,
+            initializer_stddev=initializer_stddev,
+            name='c_fc'
+        )
+
+        self.c_proj = Conv1D(
+            hidden_size, filter_size,
+            initializer_mean=initializer_mean,
+            initializer_stddev=initializer_stddev,
+            name='c_proj'
+        )
+
+        self.dropout = layers.Dropout(dropout_rate)
+
+    def call(self, inputs, training=False):
+        '''
+        Gets the result of feeding the input through the multi-layer perceptron.
+
+        '''
+
+        inputs = self.activation(self.c_fc(inputs))
+        inputs = self.c_proj(inputs)
+        inputs = self.dropout(inputs, training=training)
+        return inputs
+
+class DecoderBlock(layers.Layer):
+    '''
+    A single Transformer-decoder block.
+
+    '''
+
+    def __init__(self, embedding_size, attention_head_count, use_relative_attention=False,
+                 attention_dropout_rate=0.1, residual_dropout_rate=0.1, layer_normalization_epsilon=1e-5,
+                 scale=False, initializer_mean=0, initializer_stddev=0.02, **kwargs):
+        '''
+        Initializes an instance of :class:`DecoderBlock`.
+
+        :param embedding_size:
+            The number of units in the embedding layer.
+        :param attention_head_count:
+            The number of attention heads.
+        :param use_relative_attention:
+            Indicates whether to use relative attention. Defaults to ``False``.
+        :param attention_dropout_rate:
+            The dropout rate for the attention convolutional layer.
+        :param residual_dropout_rate:
+            The dropout rate for all fully connected (dense) linear layers.
+        :param layer_normalization_epsilon:
+            The epsilon to use in the layer normalization layers.
+        :param scale:
+            Indicates whether the attention scores should be scaled. Defaults to ``False``.
+        :param initializer_mean:
+            The mean of the truncated random normal initializer. Defaults to 0.
+        :param initializer_stddev:
+            The standard deviation of the truncated random normal initializer.
+            Defaults to 0.02.
+        
+        '''
+
+        super().__init__(**kwargs)
+
+        self.ln_1 = layers.LayerNormalization(epsilon=layer_normalization_epsilon, name='ln_1')
+        self.attn = Attention(
+            embedding_size, attention_head_count,
+            attention_dropout_rate=attention_dropout_rate,
+            residual_dropout_rate=residual_dropout_rate,
+            scale=scale, use_relative_attention=use_relative_attention,
+            initializer_mean=initializer_mean,
+            initializer_stddev=initializer_stddev,
+            name='attn'
+        )
+
+        self.ln_2 = layers.LayerNormalization(epsilon=layer_normalization_epsilon, name='ln_2')
+        self.mlp = MultilayerPerceptron(
+            4 * embedding_size, embedding_size,
+            dropout_rate=residual_dropout_rate,
+            initializer_mean=initializer_mean,
+            initializer_stddev=initializer_stddev,
+            name='mlp'
+        )
+
+    def call(self, inputs, mask, past=None, training=False):
+        '''
+        Decode the specified ``inputs``.
+
+        '''
+
+        x = self.ln_1(inputs)
+        outputs, present = self.attn(x, past=past, mask=mask, training=training)
+        x = x + outputs
+        m = self.ln_2(x)
+        m = self.mlp(m, training=training)
         x = x + m
+        
         return x, present
-
-def expand_tile(value, size):
-    '''
-    Add a new axis of given size.
-    
-    '''
-
-    value = tf.convert_to_tensor(value, name='value')
-    ndims = value.shape.ndims
-    return tf.tile(tf.expand_dims(value, axis=0), [size] + [1]*ndims)
-
-def _transformer_model(inputs, vocab_size, embedding_size, attention_head_count,
-                       decoder_layers_count, scope='model'):
-    '''
-    Run a single step of the Transformer-decoder model.
-
-    :param vocab_size:
-        The size of the MIDI-like event-based description vocabulary.
-        This is the dimensionality of a one-hot vector encoded representation of an event.
-    :param embedding_size:
-        The number of units in the embedding layer.
-    :param attention_head_count:
-        The number of attention heads.
-    :param decoder_layers_count:
-        The number of decoder blocks.
-    :param scope:
-        The name of the variable scope.
-    :returns:
-        The probability distribution of the next event in the sequence (given as logits)
-        and a list of the present states.
-
-    '''
-
-    with tf.name_scope(scope):
-        batch, sequence = shape_list(inputs)
-        
-        wte = tf.Variable(tf.random_normal_initializer(stddev=0.02)([vocab_size, embedding_size]), name='wte')      
-        h = tf.gather(wte, inputs)
-
-        # Transformer
-        presents = []
-        for layer in range(decoder_layers_count):
-            h, present = decoder_block(h, 'h%d' % layer, attention_head_count)
-            presents.append(present)
-        
-        presents = tf.stack(presents, axis=1)
-        h = norm(h, 'ln_f')
-        
-        # Language model loss. Do tokens <n predict token n?
-        h_flat = tf.reshape(h, [batch * sequence, embedding_size])
-        logits = tf.matmul(h_flat, wte, transpose_b=True)
-        logits = tf.reshape(logits, [batch, sequence, vocab_size])
-        return logits, presents
 
 class Transformer(BaseModel):
     '''
@@ -266,35 +595,113 @@ class Transformer(BaseModel):
 
     '''
 
-    def __init__(self, event_vocab_size, embedding_size, attention_head_count,
-                 decoder_layers_count, scope='model'):
+    def __init__(self, vocab_size, embedding_size, window_size, decoder_layers_count,
+                 attention_head_count, use_relative_attention=False, initializer_mean=0,
+                 initializer_stddev=0.02, attention_dropout_rate=0.1, residual_dropout_rate=0.1,
+                 layer_normalization_epsilon=1e-5, scale=True, *args, **kwargs):
         '''
         Initialize an instance of :class:`Transformer`.
 
-        :param event_vocab_size:
+        :param vocab_size:
             The size of the MIDI-like event-based description vocabulary.
             This is the dimensionality of a one-hot vector encoded representation of an event.
         :param embedding_size:
             The number of units in the embedding layer.
-        :param attention_head_count:
-            The number of attention heads.
+        :param window_size:
+            The number of events in a single input sequence.
         :param decoder_layers_count:
             The number of decoder blocks.
-        :param scope:
-            The name of the variable scope.
+        :param attention_head_count:
+            The number of attention heads.
+        :param use_relative_attention:
+            Indicates whether to use relative attention. Defaults to ``False``.
+        :param initializer_mean:
+            The mean of the truncated random normal initializer. Defaults to 0.
+        :param initializer_stddev:
+            The standard deviation of the truncated random normal initializer.
+            Defaults to 0.02.
+        :param attention_dropout_rate:
+            The dropout rate for the attention convolutional layer. Defaults to 0.1.
+        :param residual_dropout_rate:
+            The dropout rate for all fully connected (dense) linear layers. Defaults to 0.1.
+        :param layer_normalization_epsilon:
+            The epsilon to use in the layer normalization layers.
+        :param scale:
+            Indicates whether the attention scores should be scaled. Defaults to ``True``.
 
         '''
 
-        self.event_vocab_size = event_vocab_size
+        super().__init__(*args, **kwargs)
+
         self.embedding_size = embedding_size
-        self.attention_head_count = attention_head_count
         self.decoder_layers_count = decoder_layers_count
-        self.scope = scope
+
+        self.wte = SharedTokenEmbedding(
+            vocab_size, embedding_size,
+            initializer_mean=initializer_mean,
+            initializer_stddev=initializer_stddev,
+            name='wte'
+        )
+      
+        embeddings_initializer = tf.keras.initializers.TruncatedNormal(mean=initializer_mean, stddev=initializer_stddev)
+        self.wpe = PositionEmbedding(
+            window_size, embedding_size,
+            initializer_mean=initializer_mean,
+            initializer_stddev=initializer_stddev,
+            name='wpe'
+        )
+
+        self.decoder_blocks = [DecoderBlock(
+            embedding_size, attention_head_count,
+            use_relative_attention=use_relative_attention,
+            attention_dropout_rate=attention_dropout_rate,
+            residual_dropout_rate=residual_dropout_rate,
+            layer_normalization_epsilon=layer_normalization_epsilon,
+            scale=scale, initializer_mean=initializer_mean,
+            initializer_stddev=initializer_stddev,
+            name='h_%d' % (layer_index + 1)
+        ) for layer_index in range(decoder_layers_count)]
+        self.ln_f = layers.LayerNormalization(epsilon=layer_normalization_epsilon, name='ln_f')
+
+    def call(self, inputs, past=None, training=False):
+        '''
+        Run the specified ``inputs`` through the Transformer-decoder model.
+
+        :param inputs:
+            An int tensor with shape [batch, sequence, features].
+        :param past:
+            The previous state of the model. Defaults to ``None``.
+        :param training:
+            Indicates whether this step is training. Defaults to ``False``.
+        :returns:
+            A probability distribution of the next feature in the sequence (given as logits)
+            and the present state of the model.
+
+        '''
+
+        inputs = tf.cast(inputs, tf.int32)
+        batch, sequence = shape_list(inputs)[:2]
+        if past is None:
+            pasts = [None] * self.decoder_layers_count
+        else:
+            pasts = past
+
+        attention_mask = create_attention_mask(inputs)
+        past_length = 1 if past is None else tf.shape(past)[-2]
+
+        h = self.wte(inputs, mode='embedding') + self.wpe(inputs, start=past_length)
+        presents = []
+        for decoder_layer, past in zip(self.decoder_blocks, pasts):
+            h, present = decoder_layer(h, attention_mask, past=past, training=training)
+            presents.append(present)
+        
+        h = self.ln_f(h)
+        logits = self.wte(h, mode='linear')
+        return logits, presents
 
     def train(self, dataset, input_shape, logdir, restoredir=None, epochs=None,
               learning_rate=1e-3, save_frequency_mode=ModelSaveFrequencyMode.EPOCH,
-              save_frequency=1, max_checkpoints=1, checkpoint_name_format='model-{global_step}gs',
-              show_progress_bar=True):
+              save_frequency=1, max_checkpoints=1, show_progress_bar=True):
         '''
         Fit the model to the specified ``dataset``.
 
@@ -308,7 +715,6 @@ class Transformer(BaseModel):
         :param restoredir:
             The log directory of the model to continue training. If both ``logdir``
             and ``restoredir`` are specified, the ``restoredir`` will be used.
-
             Defaults to ``None``.
         :param epochs:
             The number of epochs to train for. Defaults to ``None``, meaning
@@ -318,127 +724,93 @@ class Transformer(BaseModel):
         :param save_frequency_mode:
             A :class:`composer.models.ModelSaveFrequency` indicating the units of 
             the model save frequency. This can also be a string value corresponding
-            to the enum value. Defaults to :class:`ModelSaveFrequencyMode.EPOCH`.
+            to the enum value. Defaults to :class:`composer.ModelSaveFrequencyMode.EPOCH`.
         :param save_frequency:
             How often the model should be saved in units specified by the 
             `save_frequency_mode` parameter. Defaults to 1.
         :param max_checkpoints:
             The maximum number of checkpoints to keep. Defaults to 1.
-        :param checkpoint_name_format:
-            The format of the model checkpoint name. This can either be a string
-            value or a method that takes in the current epoch and current global step
-            and returns a string representing the checkpoint name.
-
-            The following formatting keys are supported:
-                * epochs: the current epoch (starts at 1).
-                * global_step: the current global step (starts at 1).
         :param show_progress_bar:
             Indicates whether a progress bar will be shown to indicate epoch status.
             Defaults to ``True``.
 
         '''
 
-        save_frequency = ModelSaveFrequencyMode(save_frequency_mode)
-
-        X = tf.compat.v1.placeholder(tf.int32, [None, input_shape[1]])
-        Y = tf.compat.v1.placeholder(tf.int32, [None, input_shape[1]])
-
-        hparams = {
-            'vocab_size': self.event_vocab_size,
-            'embedding_size': self.embedding_size,
-            'attention_head_count': self.attention_head_count,
-            'decoder_layers_count': self.decoder_layers_count,
-            'scope': self.scope,
-            'reuse_scope': self.reuse_scope
-        }
-
-        logits, _ = _transformer_model(X, **hparams)
-        loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=Y, logits=logits))
-        accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.cast(tf.argmax(logits, 2), tf.int32), Y), tf.float32))
-
-        summary_loss = tf.compat.v1.summary.scalar('loss', loss)
-        summary_accuracy = tf.compat.v1.summary.scalar('accuracy', accuracy)
-
-        global_step = tf.compat.v1.Variable(0, name='global_step')
-        learning_rate = tf.compat.v1.Variable(learning_rate, name='learning_rate')
-        train_step = tf.compat.v1.train.AdamOptimizer(learning_rate).minimize(loss, global_step)
-
-        use_iterator_op = False
-        if isinstance(dataset, tf.data.Dataset):
-            dataset_iterator_op = tf.compat.v1.data.make_one_shot_iterator(dataset).get_next()
-            use_iterator_op = True
-
-        session = tf.compat.v1.Session(config=tf.compat.v1.ConfigProto())
-
-        # Initialize local and global variables
-        session.run(tf.compat.v1.local_variables_initializer())
-        session.run(tf.compat.v1.global_variables_initializer())
-
-        saver = tf.compat.v1.train.Saver(max_to_keep=max_checkpoints)
-
-        # Restore the model, if exists
         logdir = Path(logdir)
         if restoredir is not None:
-            checkpoint = tf.compat.v1.latest_checkpoint(restoredir)
+            logdir = Path(restoredir)  
+
+        optimizer = optimizers.Adam(learning_rate=learning_rate)
+        loss_object = losses.SparseCategoricalCrossentropy(from_logits=True)
+
+        checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=self)
+        manager = tf.train.CheckpointManager(checkpoint, logdir, max_to_keep=max_checkpoints)
+
+        # Restore the model, if exists
+        if restoredir is not None:
             try:
-                saver.restore(session, checkpoint)
-                logdir = Path(restoredir)
-                logging.info('Model restored from \'{}\'.'.format(restoredir))
+                checkpoint.restore(manager.latest_checkpoint)
+                logging.info('Model restored from \'{}\'.'.format(manager.latest_checkpoint))
             except:
                 logging.error('Failed to restore model from \'{}\'.'.format(restoredir))
                 exit(1)
 
-        # Tensorboard logging
-        summary_log = tf.compat.v1.summary.FileWriter(logdir / 'train')
+        # TensorBoard summary logger
+        summary_log = tf.summary.create_file_writer(logdir / 'train')
 
-        def _resolve_checkpoint_name(epoch, global_step):
-            if isinstance(checkpoint_name_format, str):
-                return checkpoint_name_format.format(epoch=epoch, global_step=global_step)
-            else:
-                # If not a string, assume it is a method... If not, it will error out.
-                return checkpoint_name_format(epoch, global_step)
-
-        current_epoch = 0
+        current_epoch = 1
         steps_per_epoch = None
+        save_frequency = ModelSaveFrequencyMode(save_frequency_mode)
         while epochs is None or current_epoch < epochs:
             logging.info('Epoch {}'.format(str(current_epoch + 1) if epochs is None else '{}/{}'.format(current_epoch + 1, epochs)))
             with tqdm(total=steps_per_epoch, disable=not show_progress_bar) as progress_bar:
-                if not use_iterator:
-                    # Restart the dataset iterator
-                    dataset_iterator = iter(dataset)
+                epoch_loss_average = tf.keras.metrics.Mean()
+                epoch_accuracy = tf.keras.metrics.SparseCategoricalAccuracy()
 
-                while True:
-                    if use_iterator_op:
-                        try:
-                            x, y = session.run([dataset_iterator_op])
-                        except tf.errors.OutOfRangeError:
-                            break
-                    else:
-                        try:
-                            x, y = next(dataset_iterator)
-                        except StopIteration:
-                            break
+                for x, y in dataset:
+                    checkpoint.step.assign.add(1)
+                    progress_bar.update(1)
 
-                    ops = [train_step, global_step, loss, summary_loss, accuracy, summary_accuracy]
-                    _, _global_step, _loss, _summary_loss, _accuracy, _summary_accuracy = session.run(ops, feed_dict={X: x, Y: Y})
+                    # Compute loss and optimize
+                    with tf.GradientTape() as tape:
+                        predictions, _ = self(x, training=True)
+                        loss = loss_object(y_true=y, y_pred=predictions)
                     
-                    summary_log.add_summary(_summary_loss, _global_step)
-                    summary_log.add_summary(_summary_accuracy, _global_step)
+                    grads = tape.gradient(loss, self.trainable_variables)
+                    optimizer.apply_gradients(zip(grads, self.trainable_variables))
+                    
+                    # Calculate the batch accuracy
+                    _acc_logits = tf.cast(tf.argmax(logits, axis=-1), tf.int32)
+                    _acc_y = tf.cast(y, tf.int32)
+                    accuracy = tf.reduce_mean(tf.cast(tf.equal(_acc_logits, _acc_y), tf.float32))
+
+                    # Update loss and accuracy metrics
+                    epoch_loss_average.update_state(loss)
+                    epoch_accuracy.update_state(y, predictions)
+
+                    # Log to TensorBoard summary
+                    global_step = int(checkpoint.step)
+                    with summary_log.as_default():
+                        tf.summary.scalar('loss', loss, step=global_step)
+                        tf.summary.scalar('accuracy', accuracy, step=global_step)
 
                     # Update description of progress bar to show loss and accuracy statistics
                     progress_bar.set_description('- loss: {:.4f} - accuracy: {:.4f}'.format(_loss, _accuracy))
 
-                    if save_frequency_mode == ModelSaveFrequencyMode.GLOBAL_STEP and _global_step % save_frequency:
-                        saver.save(session, logdir / _resolve_checkpoint_name(current_epoch, _global_step), global_step=_global_step)
-                    
-                    progress_bar.update(1)
+                    if save_frequency_mode == ModelSaveFrequencyMode.GLOBAL_STEP and global_step % save_frequency:
+                        save_path = manager.save()
+                        logging.info('Saved checkpoint for step {} at {}.'.format(global_step, save_path))
+
+                # Log to TensorBoard summary
+                with summary_log.as_default():
+                    tf.summary.scalar('epoch_loss', epoch_loss_average.result(), step=current_epoch)
+                    tf.summary.scalar('epoch_accuracy', epoch_accuracy.result(), step=current_epoch)
 
                 if save_frequency_mode == ModelSaveFrequencyMode.EPOCH and current_epoch % save_frequency:
-                    saver.save(session, logdir / _resolve_checkpoint_name(current_epoch, _global_step), global_step=_global_step)
+                    save_path = manager.save()
+                    logging.info('Saved checkpoint for epoch {} at {}.'.format(current_epoch, save_path))
                 
                 if steps_per_epoch is None:
                     steps_per_epoch = progress_bar.n
 
                 current_epoch += 1
-
-        session.close()

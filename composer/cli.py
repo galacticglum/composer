@@ -15,7 +15,7 @@ import numpy as np
 import composer.config
 import composer.dataset.preprocess
 import composer.logging_utils as logging_utils
-from composer.models import ModelSaveFrequencyMode
+from composer import ModelSaveFrequencyMode
 
 from shutil import copy2
 from pathlib import Path
@@ -83,7 +83,7 @@ def create_model(model_type, config, **kwargs):
     :param \**kwargs:
         External data passed to the creation method (i.e. data not in the configuration file)
     :returns:
-        A :class:`tensorflow.keras.Model` object representing an instance of the specified model
+        A :class:`composer.models.BaseModel` object representing an instance of the specified model
         and the vocabulary size of an event in the dataset.
 
     '''
@@ -102,8 +102,11 @@ def create_model(model_type, config, **kwargs):
     def _create_transformer():
         return models.Transformer(
             event_vocab_size, config.transformer.model.embedding_size,
-            config.transformer.model.decoder_layers_count,
-            config.transformer.model.attention_head_count
+            config.transformer.model.window_size, config.transformer.model.decoder_layers_count,
+            config.transformer.model.attention_head_count, config.transformer.model.use_relative_attention,
+            config.transformer.model.initializer_mean, config.transformer.model.initializer_stddev,
+            config.transformer.model.attention_dropout_rate, config.transformer.model.residual_dropout_rate,
+            config.transformer.model.layer_normalization_epsilon, config.transformer.model.scale_attention
         )
 
     # An easy way to map the creation functions to their respective types.
@@ -417,6 +420,7 @@ def summary(model_type, config_filepath):
     config = composer.config.get(config_filepath or get_default_config())
 
     model, _ = create_model(model_type, config)
+    model.build(input_shape=(get_batch_size(model_type, config), None))
     model.summary()
 
 @cli.command()
@@ -511,8 +515,13 @@ def get_config_from_restoredir(restoredir):
               help='The units of the save frequency. Defaults to EPOCH.', default='epoch')
 @click.option('--save-freq', 'save_frequency', help='The frequency at which to save the model (in the units specified ' +
               'by the save frequency mode). Defaults to 1.', type=int, default=1)
+@click.option('--max-checkpoints', 'max_checkpoints', help='The maximum number of checkpoints to keep. Defaults to 1.',
+              type=int, default=1)
+@click.option('--show-progress-bar/--no-show-progress-bar', 'show_progress_bar', help='Indicates whether a progress bar ' +
+              'will be shown to indicate epoch status. Defaults to True.', default=True)
 def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs, 
-          use_generator, max_files, save_frequency_mode, save_frequency):
+          use_generator, max_files, save_frequency_mode, save_frequency,
+          max_checkpoints, show_progress_bar):
     '''
     Trains the specified model.
 
@@ -557,7 +566,7 @@ def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs,
     train_dataset = get_dataset(model_type, dataset_path, config, 'train', use_generator, max_files=max_files)
     model.train(
         train_dataset, input_shape, model_logdir, restoredir, epochs,
-        learning_rate, save_frequency_mode, save_frequency
+        learning_rate, save_frequency_mode, save_frequency, max_checkpoints, show_progress_bar
     )
 
 @cli.command()

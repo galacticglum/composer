@@ -768,7 +768,7 @@ class Transformer(BaseModel):
                 epoch_accuracy = tf.keras.metrics.SparseCategoricalAccuracy()
 
                 for x, y in dataset:
-                    checkpoint.step.assign.add(1)
+                    checkpoint.step.assign_add(1)
                     progress_bar.update(1)
 
                     # Compute loss and optimize

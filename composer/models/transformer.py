@@ -140,57 +140,6 @@ class SharedTokenEmbedding(tf.keras.layers.Layer):
         else:
             raise ValueError('\'{}\' is not a valid Embedding mode.'.format(mode))
 
-class PositionEmbedding(layers.Layer):
-    '''
-    An embedding layer the encodes positional information.
-
-    '''
-
-    def __init__(self, sequence_length, hidden_size, initializer_mean=0, initializer_stddev=0.02, **kwargs):
-        '''
-        Initializes an instance of :class:`PositionEmbedding`.
-
-        :param sequence_length:
-            The expected length of an input sequence.
-        :param hidden_size:
-            The number of units in the embedding layer. This is the dimesnionality
-            of the output dense float vector representation of the input.
-        :param initializer_mean:
-            The mean of the truncated random normal initializer. Defaults to 0.
-        :param initializer_stddev:
-            The standard deviation of the truncated random normal initializer.
-            Defaults to 0.02.
-
-        '''
-
-        super().__init__(**kwargs)
-
-        embeddings_initializer = tf.keras.initializers.TruncatedNormal(mean=initializer_mean, stddev=initializer_stddev)
-        self.embedding = layers.Embedding(sequence_length, hidden_size, embeddings_initializer=embeddings_initializer)
-
-    def call(self, inputs, start=1):
-        '''
-        Get position embeddings of inputs.
-
-        :param inputs:
-            An int tensor with shape [batch_size, length].
-        :param start:
-            The start position of the input sequence.
-        :returns:
-            A float32 tensor with shape [batch_size, length, hidden_size] representing the
-            ``inputs`` as dense float vectors (with positional encoding).
-
-        '''
-
-        batch, sequence = shape_list(inputs)[:2]
-
-        positions = tf.reshape(tf.tile(tf.range(start, sequence + start), [batch]), [batch, sequence])
-        positions = tf.cast(positions, tf.int32)
-        mask = tf.cast(tf.not_equal(inputs, 0), tf.int32)
-        positions *= mask
-
-        return self.embedding(positions)
-
 class Conv1D(layers.Layer):
     '''
     A one-dimensional convolution layer as defined by Radford et al. in the GPT paper.
@@ -644,10 +593,9 @@ class Transformer(BaseModel):
         )
       
         embeddings_initializer = tf.keras.initializers.TruncatedNormal(mean=initializer_mean, stddev=initializer_stddev)
-        self.wpe = PositionEmbedding(
+        self.wpe = tf.keras.layers.Embedding(
             window_size, embedding_size,
-            initializer_mean=initializer_mean,
-            initializer_stddev=initializer_stddev,
+            embeddings_initializer=embeddings_initializer,
             name='wpe'
         )
 
@@ -680,19 +628,20 @@ class Transformer(BaseModel):
         '''
 
         inputs = tf.cast(inputs, tf.int32)
-        batch, sequence = shape_list(inputs)[:2]
+        input_shape = shape_list(inputs)
+        batch, sequence = input_shape[:2]
         if past is None:
-            pasts = [None] * self.decoder_layers_count
+            past_length = 0
+            past = [None] * self.decoder_layers_count
         else:
-            pasts = past
+            past_length = shape_list(past[0][0])[-2]
 
         attention_mask = create_attention_mask(inputs)
-        past_length = 1 if past is None else tf.shape(past)[-2]
-
-        h = self.wte(inputs, mode='embedding') + self.wpe(inputs, start=past_length)
+        position_ids = tf.range(past_length, input_shape[-1] + past_length, dtype=tf.int32)[tf.newaxis, :]
+        h = self.wte(inputs, mode='embedding') + self.wpe(position_ids)
         presents = []
-        for decoder_layer, past in zip(self.decoder_blocks, pasts):
-            h, present = decoder_layer(h, attention_mask, past=past, training=training)
+        for decoder_layer, past_state in zip(self.decoder_blocks, past):
+            h, present = decoder_layer(h, attention_mask, past=past_state, training=training)
             presents.append(present)
         
         h = self.ln_f(h)
@@ -762,15 +711,12 @@ class Transformer(BaseModel):
         steps_per_epoch = None
         save_frequency = ModelSaveFrequencyMode(save_frequency_mode)
         while epochs is None or current_epoch < epochs:
-            logging.info('Epoch {}'.format(str(current_epoch + 1) if epochs is None else '{}/{}'.format(current_epoch + 1, epochs)))
+            logging.info('Epoch {}'.format(str(current_epoch) if epochs is None else '{}/{}'.format(current_epoch, epochs)))
             with tqdm(total=steps_per_epoch, disable=not show_progress_bar) as progress_bar:
                 epoch_loss_average = tf.keras.metrics.Mean()
                 epoch_accuracy = tf.keras.metrics.SparseCategoricalAccuracy()
 
                 for x, y in dataset:
-                    checkpoint.step.assign_add(1)
-                    progress_bar.update(1)
-
                     # Compute loss and optimize
                     with tf.GradientTape() as tape:
                         predictions, _ = self(x, training=True)
@@ -800,6 +746,9 @@ class Transformer(BaseModel):
                     if save_frequency_mode == ModelSaveFrequencyMode.GLOBAL_STEP and global_step % save_frequency:
                         save_path = manager.save()
                         logging.info('Saved checkpoint for step {} at {}.'.format(global_step, save_path))
+
+                    checkpoint.step.assign_add(1)
+                    progress_bar.update(1)
 
                 # Log to TensorBoard summary
                 with summary_log.as_default():

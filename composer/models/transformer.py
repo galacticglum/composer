@@ -743,7 +743,7 @@ class Transformer(BaseModel):
         optimizer = optimizers.Adam(learning_rate=learning_rate)
         loss_object = losses.SparseCategoricalCrossentropy(from_logits=True)
 
-        checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=self)
+        checkpoint = tf.train.Checkpoint(step=tf.Variable(1), optimizer=optimizer, model=self)
         manager = tf.train.CheckpointManager(checkpoint, logdir, max_to_keep=max_checkpoints)
 
         # Restore the model, if exists
@@ -756,7 +756,7 @@ class Transformer(BaseModel):
                 exit(1)
 
         # TensorBoard summary logger
-        summary_log = tf.summary.create_file_writer(logdir / 'train')
+        summary_log = tf.summary.create_file_writer(str(logdir / 'train'))
 
         current_epoch = 1
         steps_per_epoch = None

@@ -531,6 +531,7 @@ def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs,
 
     if restoredir is not None:
         config = get_config_from_restoredir(restoredir)
+        model_logdir = None
     else:
         initial_epoch = 0
         model_logdir = Path(logdir) / '{}-{}'.format(model_type.name.lower(), datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
@@ -567,8 +568,10 @@ def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs,
     learning_rate = get_learning_rate(model_type, config)
     train_dataset = get_dataset(model_type, dataset_path, config, 'train', use_generator, max_files=max_files)
     model.train(
-        train_dataset, input_shape, model_logdir, restoredir, epochs,
-        learning_rate, save_frequency_mode, save_frequency, max_checkpoints, show_progress_bar
+        train_dataset, input_shape, model_logdir, restoredir=restoredir, epochs=epochs,
+        learning_rate=learning_rate, save_frequency_mode=save_frequency_mode,
+        save_frequency=save_frequency, max_checkpoints=max_checkpoints,
+        show_progress_bar=show_progress_bar
     )
 
 @cli.command()
@@ -586,13 +589,11 @@ def evaluate(model_type, dataset_path, restoredir, use_generator, max_files):
 
     '''
 
-    import tensorflow as tf
-
     config = get_config_from_restoredir(restoredir)  
     model, _ = create_model(model_type, config)
+    model.load_from_checkpoint(restoredir)
 
-    compile_model(model, get_learning_rate(model_type, config))
-    model.load_weights(tf.train.latest_checkpoint(restoredir))
+    model.compile(get_learning_rate(model_type, config))
     model.build(input_shape=(get_batch_size(model_type, config), None))
 
     test_dataset = get_dataset(model_type, dataset_path, config, 'test', use_generator, max_files=max_files, shuffle_dataset=False)

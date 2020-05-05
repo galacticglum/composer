@@ -63,6 +63,29 @@ class BaseModel(tf.keras.Model):
 
         raise NotImplementedError()
 
+    def load_from_checkpoint(self, restoredir):
+        '''
+        Loads a model from a checkpoint in the specified ``restoredir``.
+
+        :param restoredir:
+            The log directory to restore the checkpoint from.
+
+        '''
+
+        checkpoint = tf.train.Checkpoint(step=tf.Variable(1), epoch=tf.Variable(1), model=self)
+
+        # Restore the model, if exists
+        try:
+            checkpoint_path = tf.train.latest_checkpoint(str(restoredir))
+            checkpoint.restore(checkpoint_path).expect_partial()
+            logging.info('{} model restored from \'{}\' (global_step={}, epoch={}).'.format(
+                self.__class__.__name__, checkpoint_path,
+                checkpoint.step.numpy(), checkpoint.epoch.numpy()
+            ))
+        except:
+            logging.exception('Failed to restore model from \'{}\''.format(restoredir))
+            exit(1)
+
 from composer.models.music_rnn import MusicRNN
 from composer.models.transformer import Transformer
 

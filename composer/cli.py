@@ -441,7 +441,7 @@ def visualize_training(model_type, dataset_path, config_filepath, steps, decode_
     '''
 
     config = composer.config.get(config_filepath or get_default_config())
-    dataset = get_dataset(model_type, dataset_path, config, mode='train', max_files=1, show_progress_bar=False)
+    dataset = get_dataset(model_type, dataset_path, config, mode='train', use_generator=False, max_files=5, show_progress_bar=False)
 
     count = 0
     events = []

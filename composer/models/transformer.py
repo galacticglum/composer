@@ -1,5 +1,5 @@
 '''
-A decoder-only Transformer model for music generation.
+Transformer: a decoder-only Transformer model for music generation.
 
 Source: https://github.com/openai/gpt-2/blob/master/src/model.py
 
@@ -55,7 +55,7 @@ def attention_mask(size):
          [0., 0., 1., 1.],
          [0., 0., 0., 1.],
          [0., 0., 0., 0.]]
-         
+
     '''
 
     mask = 1 - tf.linalg.band_part(tf.ones((size, size)), -1, 0)

@@ -1,11 +1,11 @@
 '''
 Transformer: a decoder-only Transformer model for music generation.
 
-Source: https://github.com/openai/gpt-2/blob/master/src/model.py
-
 The model implementation is based on the GPT-2 source code.
 It is modified so that the code style is consistent and to include
 a memory-efficient relative attention implementation.
+
+Source: https://github.com/openai/gpt-2/blob/master/src/model.py
 
 '''
 

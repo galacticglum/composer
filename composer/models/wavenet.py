@@ -15,6 +15,7 @@ Sources:
 '''
 
 import tensorflow as tf
+from collections import deque
 from tensorflow.keras import layers
 
 class FastConv1D(layers.Layer):
@@ -41,8 +42,8 @@ class FastConv1D(layers.Layer):
             Defaults to 1.
         :param use_bias:
             Indicates whether the layer uses a bias vector. Defaults to ``True``.
-        :param is_casual:
-            Indicates whether to perform casual convolutions. Defaults to ``False``.
+        :param is_causal:
+            Indicates whether to perform causal convolutions. Defaults to ``False``.
         :param use_activation:
             Indicates whether to use an activation function (softsign). Defaults to ``False``.
 
@@ -53,27 +54,51 @@ class FastConv1D(layers.Layer):
         self.kernel_size = kernel_size
         self.dilation_rate = dilation_rate
         self.use_activation = use_activation
-        self.is_casual = is_casual
+        self.is_causal = is_causal
 
         self.conv1d = layers.Conv1D(filters, kernel_size, strides=strides, dilation_rate=dilation_rate, use_bias=use_bias)
     
-    def call(self, inputs):
+    def call(self, inputs, training=False):
         '''
         Gets convolutions on the specified ``inputs``.
 
         :param inputs:
             A 3-dimensional float32 tensor of shape [batch, sequence, features].
+        :param training:
+            Indicates whether this step is training. Defaults to ``False``.
         :returns:
             A float32 tensor with shape [batch_size, length, kernel_size].
 
         '''
 
-        if self.is_casual:
-            padding = (int((self.kernel_size - 1) * (self.dilation_rate)), 0)
-            inputs = tf.pad(inputs, padding)
+        if training:
+            if self.is_causal:
+                padding = (int((self.kernel_size - 1) * (self.dilation_rate)), 0)
+                inputs = tf.pad(inputs, padding)
 
-        inputs = self.conv1d(inputs)
-        if self.use_activation:
-            inputs = tf.keras.activations.softsign(inputs)
-        
-        return inputs
+            inputs = self.conv1d(inputs)
+            if self.use_activation:
+                inputs = tf.keras.activations.softsign(inputs)
+            
+            return inputs
+        else:
+            input_shape = inputs.shape
+            if len(input_shape) <= 2:
+                inputs = tf.expand_dims(inputs, -1)
+            
+            if input_shape[-1] > 1:
+                inputs = inputs[:, :, -1]
+            
+            if self.kernel_size == 1:
+                return self.conv1d(inputs)
+            elif self.is_causal:
+                # Initialize the input memory
+                if self.input_memory is None:
+                    self.input_memory = deque()
+                    for i in range(self.dilation_rate):
+                        buffer = tf.zeros((inputs.shape[0], self.input_size, 1))
+                        self.input_memory.append(buffer)
+
+                self.input_memory.appendleft(tf.identity(inputs))
+                x0 = self.input_memory.pop()
+                return self.conv1d(tf.concat((x0, inputs), 2))

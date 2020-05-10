@@ -11,7 +11,7 @@ from composer import ModelSaveFrequencyMode
 
 class BaseModel(tf.keras.Model):
     '''
-    A generic model interface class.
+    A generic model interface class for use with the command-line interface.
 
     '''
 

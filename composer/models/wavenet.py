@@ -14,9 +14,13 @@ Sources:
 
 '''
 
+# TODO: Finish WaveNet model implementation for MIDI conditioning (Midi2Wave).
+# Note: the implementation of this model (and by extension the WaveNet autoencoder
+#       used to synthesize MIDI files) is incomplete and in a dormant state at this time.
+
 import tensorflow as tf
 from collections import deque
-from tensorflow.keras import layers
+from tensorflow.keras import Model, layers
 
 class FastConv1D(layers.Layer):
     '''

@@ -56,7 +56,8 @@ class FastConv1D(layers.Layer):
         self.use_activation = use_activation
         self.is_causal = is_causal
 
-        self.conv1d = layers.Conv1D(filters, kernel_size, strides=strides, dilation_rate=dilation_rate, use_bias=use_bias)
+        self.conv1d = layers.Conv1D(filters, kernel_size, strides=strides,
+                                    dilation_rate=dilation_rate, use_bias=use_bias)
     
     def call(self, inputs, training=False):
         '''
@@ -102,3 +103,75 @@ class FastConv1D(layers.Layer):
                 self.input_memory.appendleft(tf.identity(inputs))
                 x0 = self.input_memory.pop()
                 return self.conv1d(tf.concat((x0, inputs), 2))
+
+class Upsampler(layers.Layer):
+    '''
+    Upsamples an input tensor of shape [x, y, z] into a new tensor
+    of shape [x, y, z * c] where c is the upscale ratio.
+
+    '''
+
+    def __init__(self, ratio):
+        '''
+        Initializes an instance of :class:`Upsampler`.
+
+        :param ratio:
+            The ratio by which to scale the input tensor.
+
+        '''
+
+        self.ratio = ratio
+
+    def call(self, inputs):
+        '''
+        Upscales the input tensor.
+
+        :param inputs:
+            A tensor of shape [x, y, z].
+        :returns:
+            A tensor with shape [x, y, z * c].
+
+        '''
+
+        inputs = tf.expand_dims(inputs, 2)
+        input_shape = inputs.shape
+        inputs = tf.broadcast_to(inputs, (input_shape[0], input_shape[1], self.ratio]))
+        inputs = tf.reshape(tf.tranpose(inputs, perm=(2, 3)), [-1])
+        return inputs
+
+class QuantizedInput(layers.Layer):
+    '''
+    Quantizes the inputs to this layer into 256 mu-quantized audio values.
+
+    '''
+
+    def __init__(self, vocab_size, embedding_size, use_activation=False):
+        '''
+        Initializes an instance of :class:`QuantizedInput`.
+
+        :param vocab_size:
+            An integer or tuple/list of a single integer, specifying the size of the input space
+            (i.e. the number of unique integer values for which there exist a dense float vector mapping).
+        :param embedding_size:
+            The number of units in the embedding layer; the dimensionality of the output space
+            (i.e. the dimensionality of the output densse float vectors).
+        :param use_activation:
+            Indicates whether to use an activation function (softsign). Defaults to ``False``.
+
+        '''
+
+        self.embedding = layers.Embedding(vocab_size, embedding_size)
+        self.use_activation = use_activation
+
+    def call(self, inputs):
+        '''
+        Quantize the specified input.
+
+        '''
+
+        inputs = self.embedding(inputs)
+        inputs = tf.transpose(inputs, perms=(1, 2))
+        if self.use_activation:
+            inputs = tf.keras.activations.softsign(inputs)
+        
+        return inputs

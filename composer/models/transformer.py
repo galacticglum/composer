@@ -529,12 +529,14 @@ class DecoderBlock(layers.Layer):
 
         '''
 
+        x = inputs
         if self.use_layer_normalization:
             x = self.ln_1(inputs)
         
         outputs, present = self.attn(x, past=past, mask=mask, training=training)
         x = x + outputs
 
+        m = x
         if self.use_layer_normalization:
             m = self.ln_2(x)
             

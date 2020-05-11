@@ -471,7 +471,7 @@ class DecoderBlock(layers.Layer):
 
     def __init__(self, embedding_size, attention_head_count, use_relative_attention=False,
                  attention_dropout_rate=0.1, residual_dropout_rate=0.1, layer_normalization_epsilon=1e-5,
-                 scale=False, initializer_mean=0, initializer_stddev=0.02, **kwargs):
+                 scale=False, initializer_mean=0, initializer_stddev=0.02, use_layer_normalization=True, **kwargs):
         '''
         Initializes an instance of :class:`DecoderBlock`.
 
@@ -494,6 +494,8 @@ class DecoderBlock(layers.Layer):
         :param initializer_stddev:
             The standard deviation of the truncated random normal initializer.
             Defaults to 0.02.
+        :param use_layer_normalization:
+            Indicates whether the inputs/outputs from layers should be normalized. Defaults to ``True``.
         
         '''
 
@@ -519,16 +521,23 @@ class DecoderBlock(layers.Layer):
             name='mlp'
         )
 
+        self.use_layer_normalization = use_layer_normalization
+
     def call(self, inputs, mask, past=None, training=False):
         '''
         Decode the specified ``inputs``.
 
         '''
 
-        x = self.ln_1(inputs)
+        if self.use_layer_normalization:
+            x = self.ln_1(inputs)
+        
         outputs, present = self.attn(x, past=past, mask=mask, training=training)
         x = x + outputs
-        m = self.ln_2(x)
+
+        if self.use_layer_normalization:
+            m = self.ln_2(x)
+            
         m = self.mlp(m, training=training)
         x = x + m
         
@@ -548,7 +557,7 @@ class Transformer(BaseModel):
     def __init__(self, vocab_size, embedding_size, window_size, decoder_layers_count,
                  attention_head_count, use_relative_attention=False, initializer_mean=0,
                  initializer_stddev=0.02, attention_dropout_rate=0.1, residual_dropout_rate=0.1,
-                 layer_normalization_epsilon=1e-5, scale=True, *args, **kwargs):
+                 layer_normalization_epsilon=1e-5, scale=True, use_layer_normalization=True, *args, **kwargs):
         '''
         Initialize an instance of :class:`Transformer`.
 
@@ -578,6 +587,8 @@ class Transformer(BaseModel):
             The epsilon to use in the layer normalization layers.
         :param scale:
             Indicates whether the attention scores should be scaled. Defaults to ``True``.
+        :param use_layer_normalization:
+            Indicates whether the inputs/outputs from layers should be normalized. Defaults to ``True``.
 
         '''
 
@@ -585,6 +596,7 @@ class Transformer(BaseModel):
 
         self.embedding_size = embedding_size
         self.decoder_layers_count = decoder_layers_count
+        self.use_layer_normalization = use_layer_normalization
 
         self.wte = SharedTokenEmbedding(
             vocab_size, embedding_size,
@@ -645,7 +657,9 @@ class Transformer(BaseModel):
             h, present = decoder_layer(h, attention_mask, past=past_state, training=training)
             presents.append(present)
         
-        h = self.ln_f(h)
+        if self.use_layer_normalization:
+            h = self.ln_f(h)
+            
         logits = self.wte(h, mode='linear')
         return logits, presents
 

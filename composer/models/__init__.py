@@ -233,8 +233,8 @@ def load_events(filepaths, use_generator=True, show_loading_progress_bar=True,
     return dataset
 
 def load_dataset(filepaths, batch_size, window_size, use_generator=True, 
-                 show_loading_progress_bar=True, prefetch_buffer_size=2,
-                 input_event_encoding=EventEncodingType.INTEGER, shuffle=True):
+                 show_loading_progress_bar=True, prefetch_buffer_size=tf.data.experimental.AUTOTUNE,
+                 input_event_encoding=EventEncodingType.INTEGER, shuffle=True, cache=True):
     '''
     Loads a dataset for use.
 
@@ -255,10 +255,7 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=True,
         This is used when the dataset cannot be loaded entirely into memory. If it can, we recommend 
         that ``use_generator`` be set to ``False`` since it will load faster; otherwise, leave it as ``True``.
     :param prefetch_buffer_size:
-        The number of batches to prefetch during processing. Defaults to 2.
-        This means that 2 batches will be prefetched while the current element is being processed.
-
-        Prefetching is only used if ``use_generator`` is ``True``.
+        The number of batches to prefetch during processing. Defaults to ``tf.data.experimental.AUTOTUNE``.
     :param show_loading_progress_bar:
         Indicates whether a loading progress bar should be displayed while the dataset is loaded into memory.
         Defaults to ``True``.
@@ -282,6 +279,8 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=True,
         vector, loading the dataset will take longer than compared to integer ids.
     :param shuffle:
         Indicates whether the dataset should be shuffled. Defaults to ``True``.
+    :param cache:
+        Indiciates whether the dataset should be cached. Defaults to ``True``.
     :returns:
         A :class:`tensorflow.data.Dataset` object representing the dataset.
 
@@ -290,6 +289,10 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=True,
     import tensorflow as tf
 
     dataset = load_events(filepaths, use_generator, show_loading_progress_bar, input_event_encoding)
+
+    if cache:
+        # Cache the dataset
+        dataset = dataset.cache()
 
     # Split our dataset into sequences.
     # The input consists of window_size number of events, and the output consists of the same sequence but shifted
@@ -303,15 +306,10 @@ def load_dataset(filepaths, batch_size, window_size, use_generator=True,
         shuffle_buffer_size = 500 * batch_size
         dataset = dataset.shuffle(shuffle_buffer_size, reshuffle_each_iteration=True)
         
-    dataset = dataset.batch(batch_size, drop_remainder=True)
-    if use_generator:
-        # We only need prefetching if all the data is NOT loaded into memory
-        # (i.e. when we use a generator that loads as we go).
-        dataset = dataset.prefetch(prefetch_buffer_size)
-
+    dataset = dataset.batch(batch_size, drop_remainder=True).prefetch(prefetch_buffer_size)
     return dataset
 
-def load_tfrecord_dataset(filepath, shuffle=True):
+def load_tfrecord_dataset(filepath, shuffle=True, cache=True):
     '''
     Loads a dataset from a TFRecord.
 
@@ -323,6 +321,8 @@ def load_tfrecord_dataset(filepath, shuffle=True):
         A Path-like object representing the path to the TFRecord file.
     :param shuffle:
         Indicates whether the dataset should be shuffled. Defaults to ``True``.
+    :param cache:
+        Indiciates whether the dataset should be cached. Defaults to ``True``.
     :returns:
         A :class:`tensorflow.data.Dataset` object representing the dataset,
         and a ``dict`` representing the header metadata contents.
@@ -359,6 +359,9 @@ def load_tfrecord_dataset(filepath, shuffle=True):
         return x, y 
     
     dataset = dataset.skip(1).map(_parse_function)
+
+    # Cache the dataset
+    dataset = dataset.cache()
 
     if shuffle:
         # We make the shuffle buffer big enough to fit 500 batches. After that, it will have to reshuffle.

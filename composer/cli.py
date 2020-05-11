@@ -56,6 +56,25 @@ def cli(ctx, verbosity, seed):
     logging_utils.init()
     _set_verbosity_level(logging.getLogger(), verbosity)
 
+def get_default_config():
+    '''
+    Gets the default configuration filepath for the specified :class:`ModelType`.
+
+    '''
+
+    return Path(__file__).parent / 'default_config.yml' 
+
+@cli.command()
+@click.argument('filepath')
+def make_config(filepath):
+    '''
+    Creates a configuration file from the default configuration.
+
+    '''
+
+    default_config_filepath = get_default_config()
+    copy2(default_config_filepath, filepath)
+
 @unique
 class ModelType(Enum):
     '''
@@ -399,14 +418,6 @@ def decode_to_event(config, event_id):
 
     event_value_ranges, event_dimensions, event_ranges = get_event_sequence_ranges(config)
     return IntegerEncodedEventSequence.id_to_event(event_id, event_ranges, event_value_ranges)
-
-def get_default_config():
-    '''
-    Gets the default configuration filepath for the specified :class:`ModelType`.
-
-    '''
-
-    return Path(__file__).parent / 'default_config.yml' 
 
 @cli.command()
 @click.argument('model-type', type=EnumType(ModelType, False))

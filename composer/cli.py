@@ -106,7 +106,8 @@ def create_model(model_type, config, **kwargs):
             config.transformer.model.attention_head_count, config.transformer.model.use_relative_attention,
             config.transformer.model.initializer_mean, config.transformer.model.initializer_stddev,
             config.transformer.model.attention_dropout_rate, config.transformer.model.residual_dropout_rate,
-            config.transformer.model.layer_normalization_epsilon, config.transformer.model.scale_attention
+            config.transformer.model.layer_normalization_epsilon, config.transformer.model.scale_attention,
+            config.transformer.model.use_layer_normalization
         )
 
     # An easy way to map the creation functions to their respective types.

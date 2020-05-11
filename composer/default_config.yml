@@ -42,6 +42,7 @@ transformer:
         scale_attention: true
         initializer_mean: 0
         initializer_stddev: 0.02
+        use_layer_normalization: true
     train:
         batch_size: 1
         learning_rate: 0.001

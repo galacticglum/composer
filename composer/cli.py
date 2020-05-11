@@ -101,7 +101,7 @@ def create_model(model_type, config, **kwargs):
 
     def _create_transformer():
         return models.Transformer(
-            50257, config.transformer.model.embedding_size,
+            event_vocab_size, config.transformer.model.embedding_size,
             config.transformer.model.window_size, config.transformer.model.decoder_layers_count,
             config.transformer.model.attention_head_count, config.transformer.model.use_relative_attention,
             config.transformer.model.initializer_mean, config.transformer.model.initializer_stddev,

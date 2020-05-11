@@ -76,7 +76,7 @@ def create_attention_mask(inputs):
     mask = tf.maximum(padding_mask, att_mask)
     return mask
 
-class SharedTokenEmbedding(tf.keras.layers.Layer):
+class SharedTokenEmbedding(layers.Layer):
     '''
     A shared token embedding layer.
 
@@ -672,13 +672,13 @@ class Transformer(BaseModel):
             stddev=initializer_stddev
         )
 
-        self.wpe = tf.keras.layers.Embedding(
+        self.wpe = layers.Embedding(
             window_size, embedding_size,
             embeddings_initializer=embeddings_initializer,
             name='wpe'
         )
 
-        self.embedding_dropout = tf.keras.layers.Dropout(residual_dropout_rate, name='embd_dropout')
+        self.embedding_dropout = layers.Dropout(residual_dropout_rate, name='embd_dropout')
         self.decoder_blocks = [DecoderBlock(
             embedding_size, attention_head_count,
             use_relative_attention=use_relative_attention,

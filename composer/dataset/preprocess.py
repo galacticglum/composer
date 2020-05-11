@@ -121,7 +121,8 @@ def _get_dataset_files(dataset_path):
     
     return filepaths
 
-def convert_all(config, dataset_path, output_path, sustain_period_encode_mode, transform, transform_percent, num_workers=16):
+def convert_all(config, dataset_path, output_path, sustain_period_encode_mode,
+                transform, transform_percent, num_workers=16):
     '''
     Converts all music files in a dataset directory to a compact format readable by the Composer models.
 
@@ -172,7 +173,8 @@ def convert_all(config, dataset_path, output_path, sustain_period_encode_mode, t
 
     parallel_process(kwargs, convert_file, use_kwargs=True)
 
-def split_dataset(config, dataset_path, root_outpath_directory, sustain_period_encode_mode, test_percent, transform, transform_percent, num_workers=16):
+def split_dataset(config, dataset_path, root_outpath_directory, sustain_period_encode_mode,
+                  test_percent, transform, transform_percent, num_workers=16):
     '''
     Splits all music files in a dataset directory into a training and testing set based on the specified ratio.
 

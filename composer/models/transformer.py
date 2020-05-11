@@ -1,11 +1,15 @@
 '''
 Transformer: a decoder-only Transformer model for music generation.
 
-The model implementation is based on the GPT-2 source code.
+The model implementation is based on the GPT-2 source code [1].
 It is modified so that the code style is consistent and to include
 a memory-efficient relative attention implementation.
 
-Source: https://github.com/openai/gpt-2/blob/master/src/model.py
+The TensorFlow port is inspired by the Huggingface Transformer model [2].
+
+Sources:
+    1. https://github.com/openai/gpt-2/blob/master/src/model.py
+    2. https://huggingface.co/transformers/
 
 '''
 
@@ -78,7 +82,7 @@ class SharedTokenEmbedding(tf.keras.layers.Layer):
 
     '''
 
-    def __init__(self, vocab_size, hidden_size, initializer_mean=0, initializer_stddev=0.02, **kwargs):
+    def __init__(self, vocab_size, hidden_size, initializer_mean=0, initializer_stddev=None, **kwargs):
         '''
         Initializes an instance of :class:`SharedTokenEmbedding`.
 
@@ -151,15 +155,15 @@ class Conv1D(layers.Layer):
 
     '''
 
-    def __init__(self, hidden_size, filter_size, initializer_mean=0.0,
+    def __init__(self, filter_size, hidden_size, initializer_mean=0.0,
                  initializer_stddev=0.02, **kwargs):
         '''
         Initializes an instance of :class:`Conv1D`.
 
-        :param hidden_size:
-            The number of units in the convolutional layer.
         :param filter_size:
             The size of a convolutional filter.
+        :param hidden_size:
+            The number of units in the convolutional layer.
         :param initializer_mean:
             The mean of the truncated random normal initializer. Defaults to 0.
         :param initializer_stddev:
@@ -170,8 +174,8 @@ class Conv1D(layers.Layer):
 
         super().__init__(**kwargs)
 
-        self.hidden_size = hidden_size
         self.filter_size = filter_size
+        self.hidden_size = hidden_size
         self.initializer_mean = initializer_mean
         self.initializer_stddev = initializer_stddev
 
@@ -241,6 +245,7 @@ class Attention(layers.Layer):
         '''
         super().__init__(**kwargs)
 
+        # The number of units in this attention layer (equal to the embedding size in GPT-2).
         self.hidden_size = hidden_size
         self.attention_head_count = attention_head_count
         self.scale = scale
@@ -248,11 +253,9 @@ class Attention(layers.Layer):
 
         # The hidden size must be a multiple of the attention head count.
         assert hidden_size % attention_head_count == 0
-        # The depth refers to the size (numbers of units) of a single head.
-        self.depth = hidden_size // attention_head_count
 
         self.c_attn = Conv1D(
-            hidden_size, hidden_size * 3,
+            hidden_size * 3, hidden_size,
             initializer_mean=initializer_mean,
             initializer_stddev=initializer_stddev,
             name='c_attn'
@@ -284,6 +287,19 @@ class Attention(layers.Layer):
 
         super().build(input_shape)
 
+    @staticmethod
+    def causal_attention_mask(nd, ns, dtype):
+        '''
+        1's in the lower triangle, counting from the lower right corner.
+        Same as tf.matrix_band_part(tf.ones([nd, ns]), -1, ns-nd), but doesn't produce garbage on TPUs.
+
+        '''
+
+        i = tf.range(nd)[:, None]
+        j = tf.range(ns)
+        m = i >= j - ns + nd
+        return tf.cast(m, dtype)
+
     def _relative_attention(self, q):
         '''
         Gets the relative attention score of a query tensor.
@@ -312,97 +328,124 @@ class Attention(layers.Layer):
 
         return rel
 
-    def _multihead_attention(self, q, k, v, training, mask=None):
+    def _multihead_attention(self, inputs, training):
         '''
         Gets the attention scores and weights for a query, key, and value triplet.
 
         '''
 
+        q, k, v, attention_mask, head_mask = inputs
         # q, k, v have shape [batch, heads, sequence, features]
-        w = tf.matmul(q, k, transpose_b=True)  # (..., seq_len_q, seq_len_k)
+        w = tf.matmul(q, k, transpose_b=True)
+
         if self.use_relative_attention:
+            # Apply relative attention
             w = w + self._relative_attention(q)
 
         if self.scale:
-            # scale the attention scores
-            w = w * tf.math.rsqrt(tf.cast(v.shape[-1], w.dtype))
+            # Scale attention_scores
+            dk = tf.cast(shape_list(k)[-1], tf.float32)
+            w = w * tf.math.rsqrt(dk)
 
-        if mask is not None:
-            w += (mask * -1e9)
+        # w has shape [batch, heads, dst_sequence, src_sequence], where information flows from src to dst.
+        _, _, nd, ns = shape_list(w)
+        b = Attention.causal_attention_mask(nd, ns, dtype=w.dtype)
+        b = tf.reshape(b, [1, 1, nd, ns])
+        w = w * b - 1e4 * (1 - b)
 
-        w = tf.nn.softmax(w, axis=-1)  # (..., seq_len_q, seq_len_k)
+        if attention_mask is not None:
+            # Apply the attention mask
+            w = w + attention_mask
+
+        w = tf.nn.softmax(w, axis=-1)
         w = self.attention_dropout(w, training=training)
 
-        output = tf.matmul(w, v)  # (..., seq_len_q, depth_v)
-        return output, w
+        # Mask heads if we want to
+        if head_mask is not None:
+            w = w * head_mask
 
-    def _split_heads(self, x):
-        '''
-        Splits the input tensor into a new tensor of shape [batch_size, sequence, attention_head_count, depth].
+        outputs = [tf.matmul(w, v)]
+        if self.output_attention_weights:
+            outputs.append(w)
+        
+        return outputs
 
-        '''
-
-        batch_size = tf.shape(x)[0]
-        x = tf.reshape(x, (batch_size, -1, self.attention_head_count, self.depth))
-        return tf.transpose(x, perm=[0, 2, 1, 3])
-
-    def _merge_heads(self, x):
+    def merge_heads(self, x):
         '''
         Merges the input tensor, which contains data split into each attention head, into a new tensor
         of shape [batch_size, sequence, hidden_size].
 
         '''
 
-        batch_size = tf.shape(x)[0]
-        x = tf.transpose(x, perm=[0, 2, 1, 3])
-        # (batch_size, seq_len_q, attention_head_count, depth)
-        merged = tf.reshape(x, (batch_size, -1, self.hidden_size))
-        # (batch_size, seq_len_q, hidden_size)
-        return merged
+        x = tf.transpose(x, [0, 2, 1, 3])
+        x_shape = shape_list(x)
+        new_x_shape = x_shape[:-2] + [x_shape[-2] * x_shape[-1]]
+        return tf.reshape(x, new_x_shape)
 
-    def call(self, inputs, past=None, mask=None, training=False):
+    def split_heads(self, x):
+        '''
+        Splits the input tensor into a new tensor of shape [batch_size, sequence, attention_head_count, depth].
+
+        '''
+
+        x_shape = shape_list(x)
+        new_x_shape = x_shape[:-1] + [self.attention_head_count, x_shape[-1] // self.attention_head_count]
+        x = tf.reshape(x, new_x_shape)
+        # Output has shape (batch, head, sequence, features)
+        return tf.transpose(x, (0, 2, 1, 3)) 
+
+    def call(self, inputs, training=False):
         '''
         Gets the attention scores and present state of the attention layer.
 
         :param inputs:
-            A 3-dimensional float32 tensor of shape [batch, sequence, features].
-        :param past:
-            The previous (past) state of this attention layer.
-        :param mask:
-            The attention mask. Defaults to ``None``.
+            A list containing the input values, a 3-dimensional float32 tensor of 
+            shape [batch, sequence, features], the past layer state, attention mask,
+            head mask, and a boolean ``use_cache``.
         :param training:
             Indicates whether this step is training. Defaults to ``False``.
         :returns:
-            The attention scores and the present state.  if ``output_attention_weights``
-            is ``True``, the attention weights will be returned.
+            The attention scores and the present state. If ``output_attention_weights``
+            is ``True``, the attention  weights will be returned.
 
         '''
 
-        inputs = self.c_attn(inputs)
-        q, k, v = tf.split(inputs, 3, axis=2)
+        # Decompose inputs into their respective values
+        x, layer_past, attention_mask, head_mask, use_cache = inputs
 
-        # Split query, key, and value heads.
-        q = self._split_heads(q)
-        k = self._split_heads(k)
-        v = self._split_heads(v)
+        x = self.c_attn(x)
+        query, key, value = tf.split(x, 3, axis=2)
 
-        if past is not None:
-            past_k, past_v = tf.unstack(past, axis=1)
-            k = tf.concat([past_k, k], axis=-2)
-            v = tf.concat([past_v, v], axis=-2)
+        query = self.split_heads(query)
+        key = self.split_heads(key)
+        value = self.split_heads(value)
 
-        present = tf.stack([k, v], axis=1)
-        output, w = self._multihead_attention(q, k, v, training, mask)
-        output = self._merge_heads(output)
+        if layer_past is not None:
+            past_key, past_value = tf.unstack(layer_past, axis=0)
+            key = tf.concat([past_key, key], axis=-2)
+            value = tf.concat([past_value, value], axis=-2)
 
-        output = self.c_proj(output)  # (batch_size, seq_len_q, hidden_size)
-        output = self.residual_dropout(output, training=training)
-        
-        result = [output, present]
-        if self.output_attention_weights:
-            result.append(w)
-        
-        return result
+        if tf.is_tensor(use_cache):
+            if hasattr(use_cache, "numpy"):
+                use_cache = bool(use_cache.numpy())
+            else:
+                use_cache = True
+
+        if use_cache is True:
+            present = tf.stack([key, value], axis=0)
+        else:
+            present = (None,)
+
+        attn_outputs = self._multihead_attention([query, key, value, attention_mask, head_mask], training=training)
+        a = attn_outputs[0]
+
+        a = self.merge_heads(a)
+        a = self.c_proj(a)
+        a = self.residual_dropout(a, training=training)
+
+        outputs = [a, present] + attn_outputs[1:]
+        # Output is of the form: attention scores, present state, (attention weights)
+        return outputs
 
 class MultilayerPerceptron(layers.Layer):
     '''
@@ -437,14 +480,14 @@ class MultilayerPerceptron(layers.Layer):
 
         self.activation = activation
         self.c_fc = Conv1D(
-            filter_size, hidden_size,
+            hidden_size, filter_size,
             initializer_mean=initializer_mean,
             initializer_stddev=initializer_stddev,
             name='c_fc'
         )
 
         self.c_proj = Conv1D(
-            hidden_size, filter_size,
+            filter_size, hidden_size,
             initializer_mean=initializer_mean,
             initializer_stddev=initializer_stddev,
             name='c_proj'
@@ -471,7 +514,8 @@ class DecoderBlock(layers.Layer):
 
     def __init__(self, embedding_size, attention_head_count, use_relative_attention=False,
                  attention_dropout_rate=0.1, residual_dropout_rate=0.1, layer_normalization_epsilon=1e-5,
-                 scale=False, initializer_mean=0, initializer_stddev=0.02, use_layer_normalization=True, **kwargs):
+                 scale=False, initializer_mean=0, initializer_stddev=0.02, use_layer_normalization=True,
+                 output_attention_weights=False, **kwargs):
         '''
         Initializes an instance of :class:`DecoderBlock`.
 
@@ -496,6 +540,9 @@ class DecoderBlock(layers.Layer):
             Defaults to 0.02.
         :param use_layer_normalization:
             Indicates whether the inputs/outputs from layers should be normalized. Defaults to ``True``.
+        :param output_attention_weights:
+            Indicates whether to output the attention weights along with the scores and present states.
+            Defaults to ``False``, meaning that no attention weights will be outputed.
         
         '''
 
@@ -509,6 +556,7 @@ class DecoderBlock(layers.Layer):
             scale=scale, use_relative_attention=use_relative_attention,
             initializer_mean=initializer_mean,
             initializer_stddev=initializer_stddev,
+            output_attention_weights=output_attention_weights,
             name='attn'
         )
 
@@ -523,18 +571,20 @@ class DecoderBlock(layers.Layer):
 
         self.use_layer_normalization = use_layer_normalization
 
-    def call(self, inputs, mask, past=None, training=False):
+    def call(self, inputs, training=False):
         '''
         Decode the specified ``inputs``.
 
         '''
 
-        x = inputs
+        # Decompose inputs into their respective values
+        x, layer_past, attention_mask, head_mask, use_cache = inputs
+
         if self.use_layer_normalization:
-            x = self.ln_1(inputs)
+            x = self.ln_1(x)
         
-        outputs, present = self.attn(x, past=past, mask=mask, training=training)
-        x = x + outputs
+        attention_outputs = self.attn([x, layer_past, attention_mask, head_mask, use_cache], training=training)
+        x = x + attention_outputs[0]
 
         m = x
         if self.use_layer_normalization:
@@ -543,7 +593,8 @@ class DecoderBlock(layers.Layer):
         m = self.mlp(m, training=training)
         x = x + m
         
-        return x, present
+        outputs = [x] + attention_outputs[1:]
+        return outputs
 
 class Transformer(BaseModel):
     '''
@@ -559,7 +610,8 @@ class Transformer(BaseModel):
     def __init__(self, vocab_size, embedding_size, window_size, decoder_layers_count,
                  attention_head_count, use_relative_attention=False, initializer_mean=0,
                  initializer_stddev=0.02, attention_dropout_rate=0.1, residual_dropout_rate=0.1,
-                 layer_normalization_epsilon=1e-5, scale=True, use_layer_normalization=True, *args, **kwargs):
+                 layer_normalization_epsilon=1e-5, scale=True, use_layer_normalization=True,
+                 output_hidden_states=False, output_attention_weights=False, *args, **kwargs):
         '''
         Initialize an instance of :class:`Transformer`.
 
@@ -591,6 +643,12 @@ class Transformer(BaseModel):
             Indicates whether the attention scores should be scaled. Defaults to ``True``.
         :param use_layer_normalization:
             Indicates whether the inputs/outputs from layers should be normalized. Defaults to ``True``.
+        :param output_hidden_states:
+            Indicates whether to output the hidden states of each decoder block.
+            Defaults to ``False``, meaning that no hidden layer state will be outputed.
+        :param output_attention_weights:
+            Indicates whether to output the attention weights along with the scores and present states.
+            Defaults to ``False``, meaning that no attention weights will be outputed.
 
         '''
 
@@ -599,6 +657,8 @@ class Transformer(BaseModel):
         self.embedding_size = embedding_size
         self.decoder_layers_count = decoder_layers_count
         self.use_layer_normalization = use_layer_normalization
+        self.output_hidden_states = output_hidden_states
+        self.output_attention_weights = output_attention_weights
 
         self.wte = SharedTokenEmbedding(
             vocab_size, embedding_size,
@@ -618,6 +678,7 @@ class Transformer(BaseModel):
             name='wpe'
         )
 
+        self.embedding_dropout = tf.keras.layers.Dropout(residual_dropout_rate, name='embd_dropout')
         self.decoder_blocks = [DecoderBlock(
             embedding_size, attention_head_count,
             use_relative_attention=use_relative_attention,
@@ -627,18 +688,40 @@ class Transformer(BaseModel):
             scale=scale, initializer_mean=initializer_mean,
             initializer_stddev=initializer_stddev,
             use_layer_normalization=use_layer_normalization,
+            output_attention_weights=output_attention_weights,
             name='h_%d' % (layer_index + 1)
         ) for layer_index in range(decoder_layers_count)]
         self.ln_f = layers.LayerNormalization(epsilon=layer_normalization_epsilon, name='ln_f')
 
-    def call(self, inputs, past=None, training=False):
+    def call(self, inputs, past=None, attention_mask=None, token_type_ids=None, position_ids=None,
+             input_embeddings=None, use_cache=True, training=False):
         '''
         Run the specified ``inputs`` through the Transformer-decoder model.
 
         :param inputs:
-            An int tensor with shape [batch, sequence, features].
+            An int tensor with shape [batch, sequence] containing the input sequence tokens
+            in the vocabulary. If ``past`` is specified, only the last ``inputs`` are used.
         :param past:
-            The previous state of the model. Defaults to ``None``.
+            The previous state of the model; contains pre-computed hidden-states (key and values in the attention
+            layers) as computed by the previous call of this model. Defaults to ``None``.
+        :param attention_mask:
+            A mask to avoid performing attention on padded token indices. The mask should consist of integer values
+            selected from ``[0, 1]`` where each element encodes a boolean value indicating whether or not tokens
+            are masked; ``1`` for tokens that are NOT masked and ``0`` for tokens that ARE masked. Defaults to ``None``.
+        :param token_type_ids:
+            Token indices that are useds to indicate the first and second segments of the inputs. Consists of values
+            selected from ``[0, 1]`` where ``0`` corresponds to the first segment (A) and ``1`` corresponds to the
+            second segment (B). Defaults to ``None``.
+        :param position_ids:
+            Indicies of position for each input sequence token. This can be provided instead of computing position
+            embeddings on the input token sequence. Defaults to ``None``.
+        :param input_embeddings:
+            The embeddings of the input token sequence. This can be provided instead of passing the input ids; useful
+            when you need to control how the input token sequence is encoded into an embedding space. This is essentially
+            overriding the models' internal embedding space (which is a lookup matrix for each token in the vocabulary)
+            Defaults to ``None``.
+        :param use_cache:
+            Indicates whether to use the past key and value (this can speed up decoding). Defaults to ``True``.
         :param training:
             Indicates whether this step is training. Defaults to ``False``.
         :returns:
@@ -647,28 +730,107 @@ class Transformer(BaseModel):
 
         '''
 
+        # If we are providing the past layer state, we only
+        # use the last token in the input sequence.
+        if past is not None:
+            if inputs is not None:
+                inputs = inputs[:, -1:]
+
+            if input_embeddings is not None:
+                input_embeddings = input_embeddings[:, -1:]
+            if token_type_ids is not None:
+                token_type_ids = token_type_ids[:, -1:]
+
+        # Resolve the inputs and input embeddings.
+        # Raise errors if both or none are specified.
+        if inputs is not None and input_embeddings is not None:
+            raise ValueError('You cannot specify both inputs and input embeddings.')
+        elif inputs is not None:
+            input_shape = shape_list(inputs)
+            inputs = tf.reshape(inputs, [-1, input_shape[-1]])
+        elif input_embeddings is not None:
+            input_shape = shape_list(input_embeddings)[:-1]
+        else:
+            raise ValueError('You have to specify either inputs or input embeddings.')
+
+        # We need to cast the inputs to integers since the operations we apply on this tensor
+        # assume that the data type is an int32.
         inputs = tf.cast(inputs, tf.int32)
-        input_shape = shape_list(inputs)
-        batch, sequence = input_shape[:2]
+
         if past is None:
+            # We haven't been given a past state so the input to each decoder block is just None.
             past_length = 0
             past = [None] * self.decoder_layers_count
         else:
             past_length = shape_list(past[0][0])[-2]
-
-        attention_mask = create_attention_mask(inputs)
-        position_ids = tf.range(past_length, input_shape[-1] + past_length, dtype=tf.int32)[tf.newaxis, :]
-        h = self.wte(inputs, mode='embedding') + self.wpe(position_ids)
-        presents = []
-        for decoder_layer, past_state in zip(self.decoder_blocks, past):
-            h, present = decoder_layer(h, attention_mask, past=past_state, training=training)
-            presents.append(present)
         
-        if self.use_layer_normalization:
-            h = self.ln_f(h)
+        if position_ids is None:
+            # Compute the position ids from the input sequence.
+            # This is the input to the position embedding (which will compute positional encodings).
+            position_ids = tf.range(past_length, input_shape[-1] + past_length, dtype=tf.int32)[tf.newaxis, :]
 
-        logits = self.wte(h, mode='linear')
-        return logits, presents
+        if attention_mask is not None:
+            attention_mask = attention_mask[:, tf.newaxis, tf.newaxis, :]
+            attention_mask = tf.cast(attention_mask, tf.float32)
+            attention_mask = (1.0 - attention_mask) * -10000.0
+        else:
+            attention_mask = None
+
+        # Initialize head masks to None (i.e. don't apply any masking on attention heads).
+        head_mask = [None] * self.decoder_layers_count
+        position_ids = tf.reshape(position_ids, [-1, shape_list(position_ids)[-1]])
+
+        if input_embeddings is None:
+            input_embeddings = self.wte(inputs, mode='embedding')
+
+        position_embeddings = self.wpe(position_ids)
+        if token_type_ids is not None:
+            token_type_ids = tf.reshape(token_type_ids, [-1, shape_list(token_type_ids)[-1]])
+            token_type_embeddings = self.wte(token_type_ids, mode='embedding')
+        else:
+            token_type_embeddings = 0
+
+        hidden_states = input_embeddings + position_embeddings + token_type_embeddings
+        hidden_states = self.embedding_dropout(hidden_states, training=training)
+        output_shape = input_shape + [shape_list(hidden_states)[-1]]
+
+        presents = ()
+        all_attentions = []
+        all_hidden_states = ()
+        for i, (block, layer_past) in enumerate(zip(self.decoder_blocks, past)):
+            if self.output_hidden_states:
+                all_hidden_states = all_hidden_states + (tf.reshape(hidden_states, output_shape),)
+
+            outputs = block([hidden_states, layer_past, attention_mask, head_mask[i], use_cache], training=training)
+            hidden_states, present = outputs[:2]
+            presents = presents + (present,)
+
+            if self.output_attention_weights:
+                all_attentions.append(outputs[2])
+
+        hidden_states = self.ln_f(hidden_states)
+        hidden_states = tf.reshape(hidden_states, output_shape)
+
+        # Add last hidden state
+        if self.output_hidden_states:
+            all_hidden_states = all_hidden_states + (hidden_states,)
+
+        logits = self.wte(hidden_states, mode='linear')
+        outputs = (logits,)
+        if use_cache is True:
+            outputs = outputs + (presents,)
+
+        if self.output_hidden_states:
+            outputs = outputs + (all_hidden_states,)
+
+        if self.output_attention_weights:
+            # let the number of heads free (-1) so we can extract attention even after head pruning
+            attention_output_shape = input_shape[:-1] + [-1] + shape_list(all_attentions[0])[-2:]
+            all_attentions = tuple(tf.reshape(t, attention_output_shape) for t in all_attentions)
+            outputs = outputs + (all_attentions,)
+
+        # logits, presents, (all hidden_states), (attentions)
+        return outputs 
 
     def compile(self, learning_rate):
         '''

@@ -32,8 +32,8 @@ music_rnn:
 transformer:
     model:
         window_size: 2048
-        embedding_size: 768
-        decoder_layers_count: 12
+        embedding_size: 256
+        decoder_layers_count: 8
         attention_head_count: 16
         use_relative_attention: false
         attention_dropout_rate: 0.1

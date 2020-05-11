@@ -605,7 +605,11 @@ class Transformer(BaseModel):
             name='wte'
         )
       
-        embeddings_initializer = tf.keras.initializers.TruncatedNormal(mean=initializer_mean, stddev=initializer_stddev)
+        embeddings_initializer = tf.keras.initializers.TruncatedNormal(
+            mean=initializer_mean, 
+            stddev=initializer_stddev
+        )
+
         self.wpe = tf.keras.layers.Embedding(
             window_size, embedding_size,
             embeddings_initializer=embeddings_initializer,
@@ -620,6 +624,7 @@ class Transformer(BaseModel):
             layer_normalization_epsilon=layer_normalization_epsilon,
             scale=scale, initializer_mean=initializer_mean,
             initializer_stddev=initializer_stddev,
+            use_layer_normalization=use_layer_normalization,
             name='h_%d' % (layer_index + 1)
         ) for layer_index in range(decoder_layers_count)]
         self.ln_f = layers.LayerNormalization(epsilon=layer_normalization_epsilon, name='ln_f')
@@ -659,7 +664,7 @@ class Transformer(BaseModel):
         
         if self.use_layer_normalization:
             h = self.ln_f(h)
-            
+
         logits = self.wte(h, mode='linear')
         return logits, presents
 

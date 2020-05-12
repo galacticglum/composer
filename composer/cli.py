@@ -526,11 +526,11 @@ def get_config_from_restoredir(restoredir):
 @click.option('--max-files', default=None, help='The maximum number of files to load. Defaults to None, which means ' + 
               'that ALL files will be loaded.', type=int)
 @click.option('--save-freq-mode', 'save_frequency_mode', type=EnumType(ModelSaveFrequencyMode, False),
-              help='The units of the save frequency. Defaults to EPOCH.', default='epoch')
+              help='The units of the save frequency. Defaults to GLOBAL_STEP.', default='global_step')
 @click.option('--save-freq', 'save_frequency', help='The frequency at which to save the model (in the units specified ' +
-              'by the save frequency mode). Defaults to 1.', type=int, default=1)
-@click.option('--max-checkpoints', 'max_checkpoints', help='The maximum number of checkpoints to keep. Defaults to 1.',
-              type=int, default=1)
+              'by the save frequency mode). Defaults to every 500 global steps.', type=int, default=500)
+@click.option('--max-checkpoints', 'max_checkpoints', help='The maximum number of checkpoints to keep. Defaults to 3.',
+              type=int, default=3)
 @click.option('--show-progress-bar/--no-show-progress-bar', 'show_progress_bar', help='Indicates whether a progress bar ' +
               'will be shown to indicate epoch status. Defaults to True.', default=True)
 def train(model_type, dataset_path, logdir, restoredir, config_filepath, epochs, 

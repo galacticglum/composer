@@ -736,4 +736,4 @@ def synthesize(midi_filepath, soundfont_filepath, soundfont_save_path, chunk_siz
         'fluidsynth', '-T', 'wav',
         '-F', str(output_filepath),
         '-ni', str(soundfont_filepath), str(midi_filepath)
-    ], stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    ])

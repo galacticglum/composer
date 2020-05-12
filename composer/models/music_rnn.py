@@ -213,12 +213,19 @@ class MusicRNN(BaseModel):
 
         steps_per_epoch = None
         save_frequency_mode = ModelSaveFrequencyMode(save_frequency_mode)
+
+        # Build the model (i.e. inform the model of the input shape).
+        self.build(input_shape=input_shape)
+
         while epochs is None or int(checkpoint.epoch) < epochs:
             current_epoch = int(checkpoint.epoch)
             logging.info('Epoch {}'.format(current_epoch if epochs is None else '{}/{}'.format(current_epoch, epochs)))
             with tqdm(total=steps_per_epoch, disable=not show_progress_bar) as progress_bar:
                 epoch_loss_average = tf.keras.metrics.Mean()
                 epoch_accuracy = tf.keras.metrics.SparseCategoricalAccuracy()
+
+                # Initialize the hidden states of the model
+                self.reset_states()
 
                 for x, y in dataset:
                     # Compute loss and optimize

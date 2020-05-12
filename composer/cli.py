@@ -632,9 +632,9 @@ def generate(model_type, restoredir, output_filepath, prompt, prompt_length, gen
 
     config = get_config_from_restoredir(restoredir)
     model, _ = create_model(model_type, config)
+    model.load_from_checkpoint(restoredir)
 
-    compile_model(model, get_learning_rate(model_type, config))
-    model.load_weights(tf.train.latest_checkpoint(restoredir))
+    model.compile(get_learning_rate(model_type, config))
     model.build(input_shape=(1, None))
 
     if prompt is None:

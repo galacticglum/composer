@@ -9,7 +9,9 @@ import time
 import json
 import click
 import logging
+import requests
 import datetime
+import subprocess
 import numpy as np
 
 import composer.config
@@ -17,9 +19,9 @@ import composer.dataset.preprocess
 import composer.logging_utils as logging_utils
 from composer import ModelSaveFrequencyMode
 
-from shutil import copy2
 from pathlib import Path
 from enum import Enum, unique
+from shutil import copy2, which
 from composer.click_utils import EnumType
 from composer.exceptions import DatasetError, InvalidParameterError
 from composer.dataset.sequence import NoteSequence, EventSequence, OneHotEncodedEventSequence, IntegerEncodedEventSequence
@@ -671,3 +673,67 @@ def generate(model_type, restoredir, output_filepath, prompt, prompt_length, gen
     output_filepath = Path(output_filepath)
     output_filepath.parent.mkdir(parents=True, exist_ok=True)
     event_sequence.to_note_sequence().to_midi(str(output_filepath))
+
+@cli.command()
+@click.argument('midi_filepath')
+@click.option('--sf-path', 'soundfont_filepath', default=None,
+              help='The filepath of the soundfont to use. If not specified, uses the default soundfont.')
+@click.option('--sf-save-path', 'soundfont_save_path', default='data/soundfonts',
+              help='The path to save the default soundfont to.')
+@click.option('--chunk-size', 'chunk_size', default=32768,
+              help='The number of bytes to download in a single chunk. Defaults to 32768.')
+def synthesize(midi_filepath, soundfont_filepath, soundfont_save_path, chunk_size):
+    '''
+    Synthesize the specified MIDI file using a soundfont.
+
+    The output WAVE file has the same name as the input MIDI file.
+
+    '''
+
+    DEFAULT_SOUNDFONT_GDRIVE_ID = '1md7ysI8JeLb6idc5ZX05_iOUTvgm_l-0'
+    GDRIVE_DOWNLOAD_URL = 'https://drive.google.com/uc?export=download'
+
+    if soundfont_filepath is None:
+        soundfont_save_path = Path(soundfont_save_path)
+        soundfont_save_path.mkdir(parents=True, exist_ok=True)
+        soundfont_filepath = soundfont_save_path / 'default.sf2'
+        if not soundfont_filepath.exists():
+            logging.info('Downloading default soundfont...')
+
+            session = requests.Session()
+            response = session.get(GDRIVE_DOWNLOAD_URL, params={
+                'id': DEFAULT_SOUNDFONT_GDRIVE_ID
+            }, stream=True)
+            
+            token = next((v for k ,v in response.cookies.items() if k.startswith('download_warning')), None)
+            if token:
+                response = session.get(GDRIVE_DOWNLOAD_URL, params={
+                    'id': DEFAULT_SOUNDFONT_GDRIVE_ID,
+                    'confirm': token
+                }, stream=True)
+
+            with open(soundfont_filepath, 'wb+') as file_handle:
+                total_length = response.headers.get('content-length')
+                if total_length is None:
+                    file_handle.write(response.content)
+                else:
+                    total_length = int(total_length)
+                    with tqdm.tqdm(total=total_length) as bar:
+                        for chunk in response.iter_content(chunk_size=chunk_size):
+                            if not chunk: continue
+                            
+                            file_handle.write(chunk)
+                            bar.update(len(chunk))
+
+    # Check if fluidsynth exists...
+    if which('fluidsynth') is None:
+        logging.error('Could not find FluidSynth, which is required for synthesization using a soundfont.')
+        exit(1)
+
+    midi_filepath = Path(midi_filepath)
+    output_filepath = midi_filepath.parent / (midi_filepath.stem + '.wav')
+    subprocess.call([
+        'fluidsynth', '-T', 'wav',
+        '-F', str(output_filepath),
+        '-ni', str(soundfont_filepath), str(midi_filepath)
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)

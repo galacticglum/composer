@@ -8,7 +8,6 @@ from enum import IntEnum
 from abc import ABC, abstractmethod, abstractproperty
 from composer.utils import parallel_process
 from composer import ModelSaveFrequencyMode
-from composer.models.trainer import Trainer
 
 class BaseModel(tf.keras.Model):
     '''

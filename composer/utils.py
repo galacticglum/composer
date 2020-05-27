@@ -181,3 +181,20 @@ class ObjectPool:
 
         for _object in objects:
             self.free(_object)
+
+def merge_dicts(*args):
+    '''
+    Merges the given dictionaries.
+
+    :note:
+        If there exists duplicate keys in multiple dictionaries which are to be merged,
+        the value of the last key given in ``args`` takes precedence.
+
+    '''
+
+    result = {}
+    for x in args:
+        if not isinstance(x, dict): continue
+        result.update(x)
+    
+    return result

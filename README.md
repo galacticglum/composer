@@ -6,7 +6,7 @@ Composer is a deep learning enabled music generator module built in [Python](htt
 ## Results
  <table style="width:100%">
   <tr>
-    <td><img src="https://puu.sh/FPtrz/2c19e95e51.jpg" width="256" />
+    <td><img src="https://puu.sh/FPtrz/2c19e95e51.jpg" width="128" />
 </td>
     <td>
      The Transformer model was used to create <a href="https://soundcloud.com/galacticglum/sets/ramblings-of-a-transformer">the ramblings of a transformer</a>.

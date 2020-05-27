@@ -16,8 +16,6 @@ import numpy as np
 from pathlib import Path
 from enum import Enum, IntEnum, unique
 from pretty_midi import PrettyMIDI, Instrument, Note as MIDINote, ControlChange
-
-from composer.utils import ObjectPool
 from composer.exceptions import InvalidParameterError
 
 class Note:

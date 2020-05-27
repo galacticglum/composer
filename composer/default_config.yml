@@ -31,7 +31,7 @@ music_rnn:
 # Configuration for Transformer-Decoder model.
 transformer:
     model:
-        window_size: 2048
+        window_size: 1024
         embedding_size: 256
         decoder_layers_count: 8
         attention_head_count: 16

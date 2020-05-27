@@ -8,6 +8,7 @@ from enum import IntEnum
 from abc import ABC, abstractmethod, abstractproperty
 from composer.utils import parallel_process
 from composer import ModelSaveFrequencyMode
+from composer.models.trainer import Trainer
 
 class BaseModel(tf.keras.Model):
     '''
@@ -83,7 +84,10 @@ class BaseModel(tf.keras.Model):
                 checkpoint.step.numpy(), checkpoint.epoch.numpy()
             ))
         except:
-            logging.exception('Failed to restore model from \'{}\''.format(restoredir))
+            logging.exception('Failed to restore {} model from \'{}\''.format(
+                self.__class__.__name__, restoredir
+            ))
+            
             exit(1)
 
 from composer.models.music_rnn import MusicRNN

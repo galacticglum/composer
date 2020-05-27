@@ -19,8 +19,8 @@ import numpy as np
 from tqdm import tqdm
 import tensorflow as tf
 from pathlib import Path
+from composer.models import BaseModel, ModelSaveFrequencyMode
 from tensorflow.keras import layers, optimizers, losses
-from composer.models import BaseModel, ModelSaveFrequencyMode, Trainer
 
 def shape_list(x):
     '''
@@ -884,14 +884,77 @@ class Transformer(BaseModel):
         if restoredir is not None:
             logdir = Path(restoredir)  
 
-        trainer = Trainer(
-            self, logdir, max_checkpoints=max_checkpoints,
-            learning_rate=learning_rate
-        )
+        optimizer = optimizers.Adam(learning_rate=learning_rate)
+        loss_object = losses.SparseCategoricalCrossentropy(from_logits=True)
 
-        trainer.train(
-            dataset, epochs=epochs,
-            save_frequency_mode=save_frequency_mode,
-            save_frequency=save_frequency,
-            show_progress_bar=show_progress_bar
-        )
+        checkpoint = tf.train.Checkpoint(step=tf.Variable(1), epoch=tf.Variable(1), optimizer=optimizer, model=self)
+        manager = tf.train.CheckpointManager(checkpoint, logdir, max_to_keep=max_checkpoints)
+
+        # Restore the model, if exists
+        if restoredir is not None:
+            try:
+                checkpoint.restore(manager.latest_checkpoint)
+                logging.info('Model restored from \'{}\'.'.format(manager.latest_checkpoint))
+            except:
+                logging.error('Failed to restore model from \'{}\'.'.format(restoredir))
+                exit(1)
+
+        # TensorBoard summary logger
+        summary_log = tf.summary.create_file_writer(str(logdir / 'train'))
+
+        steps_per_epoch = None
+        save_frequency_mode = ModelSaveFrequencyMode(save_frequency_mode)
+        while epochs is None or int(checkpoint.epoch) < epochs:
+            current_epoch = int(checkpoint.epoch)
+            logging.info('Epoch {}'.format(current_epoch if epochs is None else '{}/{}'.format(current_epoch, epochs)))
+            with tqdm(total=steps_per_epoch, disable=not show_progress_bar) as progress_bar:
+                epoch_loss_average = tf.keras.metrics.Mean()
+                epoch_accuracy = tf.keras.metrics.SparseCategoricalAccuracy()
+
+                for x, y in dataset:
+                    # Compute loss and optimize
+                    with tf.GradientTape() as tape:
+                        predictions, _ = self(x, training=True)
+                        loss = loss_object(y_true=y, y_pred=predictions)
+                    
+                    grads = tape.gradient(loss, self.trainable_variables)
+                    optimizer.apply_gradients(zip(grads, self.trainable_variables))
+                    
+                    # Calculate the batch accuracy
+                    _acc_pred_y = tf.cast(tf.argmax(predictions, axis=-1), tf.int32)
+                    _acc_y = tf.cast(y, tf.int32)
+                    accuracy = tf.reduce_mean(tf.cast(tf.equal(_acc_pred_y, _acc_y), tf.float32))
+
+                    # Update loss and accuracy metrics
+                    epoch_loss_average.update_state(loss)
+                    epoch_accuracy.update_state(y, predictions)
+
+                    # Log to TensorBoard summary
+                    global_step = int(checkpoint.step)
+                    with summary_log.as_default():
+                        tf.summary.scalar('loss', loss, step=global_step)
+                        tf.summary.scalar('accuracy', accuracy, step=global_step)
+
+                    # Update description of progress bar to show loss and accuracy statistics
+                    progress_bar.set_description('- loss: {:.4f} - accuracy: {:.4f}'.format(loss, accuracy))
+
+                    if save_frequency_mode == ModelSaveFrequencyMode.GLOBAL_STEP and global_step % save_frequency == 0:
+                        save_path = manager.save()
+                        progress_bar.write('Saved checkpoint for step {} at {}.'.format(global_step, save_path))
+
+                    checkpoint.step.assign_add(1)
+                    progress_bar.update(1)
+
+                # Log to TensorBoard summary
+                with summary_log.as_default():
+                    tf.summary.scalar('epoch_loss', epoch_loss_average.result(), step=current_epoch)
+                    tf.summary.scalar('epoch_accuracy', epoch_accuracy.result(), step=current_epoch)
+
+                if save_frequency_mode == ModelSaveFrequencyMode.EPOCH and current_epoch % save_frequency == 0:
+                    save_path = manager.save()
+                    progress_bar.write('Saved checkpoint for epoch {} at {}.'.format(current_epoch, save_path))
+                
+                if steps_per_epoch is None:
+                    steps_per_epoch = progress_bar.n
+
+                checkpoint.epoch.assign_add(1)

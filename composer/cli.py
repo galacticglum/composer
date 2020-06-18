@@ -662,6 +662,11 @@ def generate(model_type, restoredir, output_filepath, prompt, prompt_length, gen
     model.reset_states()
     for i in tqdm.tqdm(range(generate_length)):
         predictions = model(x)
+        if model_type == ModelType.TRANSFORMER:
+            # We only care about the first output (logits);
+            # however, the transformer model outputs logits, presents, (hidden_states), (attentions).
+            predictions = predictions[0]
+        
         predictions = tf.squeeze(predictions, 0)
         predictions = predictions / temperature
 
